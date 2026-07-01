@@ -1,0 +1,4 @@
+/vendor/
+/phpstan-baseline.neon
+.php-cs-fixer.cache
+.DS_Store
