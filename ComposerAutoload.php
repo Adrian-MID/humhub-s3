@@ -5,9 +5,10 @@ namespace humhub\modules\humhubs3;
 /**
  * Loads this module's Composer vendor autoloader on demand.
  *
- * Manual installs keep dependencies in the module folder rather than HumHub's root
- * vendor. Autoload is deferred so config.php can be included during module discovery
- * without failing on platform checks or missing vendor/.
+ * When the module is required from HumHub's root composer.json, dependencies live in
+ * HumHub's vendor tree and are already autoloaded. Manual installs keep dependencies
+ * in this module's vendor/ folder instead. Autoload is deferred so config.php can be
+ * included during module discovery without failing on platform checks or missing vendor/.
  */
 class ComposerAutoload
 {

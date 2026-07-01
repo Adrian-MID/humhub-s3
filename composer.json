@@ -18,7 +18,8 @@
     "require": {
         "php": ">=8.0",
         "ext-curl": "*",
-        "async-aws/s3": "^2.0"
+        "async-aws/s3": "^2.0",
+        "composer/installers": "^2.3"
     },
     "autoload": {
         "psr-4": {
@@ -26,6 +27,7 @@
         }
     },
     "extra": {
+        "installer-name": "humhub-s3",
         "humhub": {
             "moduleId": "humhub-s3"
         }
@@ -34,6 +36,9 @@
         "sort-packages": true,
         "platform": {
             "php": "8.0"
+        },
+        "allow-plugins": {
+            "composer/installers": true
         }
     },
     "minimum-stability": "stable",
