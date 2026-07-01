@@ -2,13 +2,15 @@
 
 namespace humhub\modules\humhubs3;
 
+use AsyncAws\S3\S3Client;
+
 /**
- * Loads this module's Composer vendor autoloader on demand.
+ * Loads this module's Composer dependencies on demand.
  *
- * When the module is required from HumHub's root composer.json, dependencies live in
- * HumHub's vendor tree and are already autoloaded. Manual installs keep dependencies
- * in this module's vendor/ folder instead. Autoload is deferred so config.php can be
- * included during module discovery without failing on platform checks or missing vendor/.
+ * Dependencies may live in any of these locations (checked in order):
+ * - HumHub's protected/vendor/ (git-based installs that require async-aws/s3 at the web root)
+ * - protected/modules/vendor/ (composer require from the modules folder)
+ * - this module's vendor/ (manual clone + composer install inside the module)
  */
 class ComposerAutoload
 {
@@ -21,12 +23,34 @@ class ComposerAutoload
             return;
         }
 
-        $autoloadFile = __DIR__ . '/vendor/autoload.php';
-        if (is_file($autoloadFile))
+        if (class_exists(S3Client::class))
         {
-            require_once $autoloadFile;
+            self::$loaded = true;
+
+            return;
+        }
+
+        foreach (self::autoloadCandidates() as $autoloadFile)
+        {
+            if (is_file($autoloadFile))
+            {
+                require_once $autoloadFile;
+                break;
+            }
         }
 
         self::$loaded = true;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function autoloadCandidates(): array
+    {
+        return [
+            __DIR__ . '/../vendor/autoload.php',
+            __DIR__ . '/vendor/autoload.php',
+            __DIR__ . '/../../vendor/autoload.php',
+        ];
     }
 }

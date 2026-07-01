@@ -22,56 +22,28 @@ Store HumHub file uploads in Amazon S3 or an S3-compatible service (MinIO, Wasab
 
 ## Installation
 
-This module is a Composer package (`adrian-mid/humhub-s3`, type `humhub-module`). The recommended setup is to require it from HumHub's root `composer.json` so the module is installed under `protected/modules/humhub-s3/` and its dependencies (for example `async-aws/s3`) are resolved in HumHub's vendor tree.
+Use a separate Composer project in `protected/modules/`. The module installs to `protected/modules/humhub-s3/` and its dependencies go to `protected/modules/vendor/`, leaving HumHub's `protected/vendor/` tree untouched.
 
-### Via Composer (recommended)
+Do not run `composer init` or `composer require` at the HumHub web root.
 
-From your HumHub web root (the directory that contains `protected/`), run:
+**One-time setup** — copy the Composer scaffold (once per HumHub instance):
 
 ```bash
-cd /path/to/humhub
-
-composer init --no-interaction \
-  --name=local/humhub-instance \
-  --description="HumHub instance" \
-  --type=project
-
-composer config vendor-dir protected/vendor
-composer config --json extra.installer-types '["humhub-module"]'
-composer config --json extra.installer-paths '{"protected/modules/{$name}/":["type:humhub-module"]}'
-composer config allow-plugins.composer/installers true
-composer config allow-plugins.mnsami/composer-custom-directory-installer true
-
-composer require \
-  composer/installers:^2.3 \
-  mnsami/composer-custom-directory-installer:^2.1 \
-  adrian-mid/humhub-s3:^1.0
-
-php protected/yii cache/flush-all
+cd /path/to/humhub/protected/modules
+curl -fsSL https://raw.githubusercontent.com/Adrian-MID/humhub-s3/main/modules.composer.json -o composer.json
 ```
 
-These commands create a root `composer.json`, store dependencies under `protected/vendor/` (HumHub's usual layout), and install this module to `protected/modules/humhub-s3/`. The module's dependencies (for example `async-aws/s3`) are resolved in HumHub's vendor tree rather than inside the module folder.
+**Install or update:**
 
-`composer/installers` is required by this module's package type. `mnsami/composer-custom-directory-installer` registers the custom `humhub-module` type so Composer can install matching packages outside `vendor/`. The module's `installer-name` (`humhub-s3`) ensures it lands in the correct folder, which must match the module ID in `module.json`.
+```bash
+cd /path/to/humhub/protected/modules
+composer require adrian-mid/humhub-s3:^1.0
+php ../yii cache/flush-all
+```
 
 Enable **HumHub S3** under *Administration → Modules*.
 
 > HumHub 1.16+ processes module disable and removal via background queue jobs. Ensure cron is running (`php protected/yii cron/run`) or run the queue worker manually (`php protected/yii queue/run`).
-
-### Manual install
-
-If you cannot use Composer at the HumHub root, clone the module and install dependencies locally:
-
-```bash
-cd /path/to/humhub/protected/modules
-git clone https://github.com/Adrian-MID/humhub-s3.git humhub-s3
-cd humhub-s3
-composer install --no-dev --optimize-autoloader
-cd ../..
-php protected/yii cache/flush-all
-```
-
-Then enable **HumHub S3** under *Administration → Modules*.
 
 ## Configuration
 
