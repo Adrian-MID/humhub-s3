@@ -1,0 +1,24 @@
+{
+    "name": "local/humhub-modules",
+    "description": "Composer project for HumHub modules (copy to protected/modules/composer.json)",
+    "type": "project",
+    "require": {
+        "composer/installers": "^2.3",
+        "mnsami/composer-custom-directory-installer": "^2.1"
+    },
+    "config": {
+        "vendor-dir": "vendor",
+        "sort-packages": true,
+        "allow-plugins": {
+            "composer/installers": true,
+            "mnsami/composer-custom-directory-installer": true
+        }
+    },
+    "extra": {
+        "installer-types": ["humhub-module"],
+        "installer-paths": {
+            "{$name}/": ["type:humhub-module"]
+        }
+    },
+    "minimum-stability": "stable"
+}
