@@ -1,0 +1,54 @@
+{
+    "name": "adrian-mid/humhub-s3",
+    "description": "Store HumHub file uploads in Amazon S3 or an S3-compatible service.",
+    "type": "humhub-module",
+    "keywords": ["humhub", "humhub-module", "s3", "aws", "storage", "files", "upload"],
+    "license": "GPL-3.0-or-later",
+    "homepage": "https://github.com/Adrian-MID/humhub-s3",
+    "authors": [
+        {
+            "name": "HumHub",
+            "homepage": "https://www.humhub.com"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/Adrian-MID/humhub-s3/issues",
+        "source": "https://github.com/Adrian-MID/humhub-s3"
+    },
+    "require": {
+        "php": ">=8.0",
+        "ext-curl": "*",
+        "async-aws/s3": "^2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "humhub\\modules\\humhubs3\\": ""
+        }
+    },
+    "extra": {
+        "humhub": {
+            "moduleId": "humhub-s3"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "platform": {
+            "php": "8.0"
+        }
+    },
+    "minimum-stability": "stable",
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.75",
+        "phpstan/phpstan": "^2.1"
+    },
+    "scripts": {
+        "cs:check": "php-cs-fixer check --config=.php-cs-fixer.dist.php --diff",
+        "cs:fix": "php-cs-fixer fix --config=.php-cs-fixer.dist.php",
+        "phpstan": "phpstan analyse --configuration=phpstan.neon.dist --memory-limit=512M",
+        "phpstan:baseline": "phpstan analyse --configuration=phpstan.neon.dist --memory-limit=512M --generate-baseline",
+        "lint": [
+            "@cs:check",
+            "@phpstan"
+        ]
+    }
+}

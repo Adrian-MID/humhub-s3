@@ -1,0 +1,13 @@
+parameters:
+    level: 10
+    paths:
+        - .
+    excludePaths:
+        - vendor
+        - messages
+        - views
+        - phpstan
+    bootstrapFiles:
+        - phpstan/stubs/yii2.php
+        - phpstan/stubs/humhub.php
+        - phpstan/stubs/yii-app.php
