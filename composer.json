@@ -45,10 +45,5 @@
             "@cs:check",
             "@phpstan"
         ]
-    },
-    "config": {
-        "allow-plugins": {
-            "composer/installers": false
-        }
     }
 }
