@@ -75,6 +75,16 @@ class MailHeaderImage extends \humhub\modules\humhubs3\libs\core\MailHeaderImage
     }
 
     /**
+     * Class-map overrides live under libs/, but mail views remain in HumHub core.
+     *
+     * @inheritdoc
+     */
+    public function getViewPath(): string
+    {
+        return (string) Yii::getAlias('@humhub/widgets/mails/views');
+    }
+
+    /**
      * @inheritdoc
      */
     public function run()
