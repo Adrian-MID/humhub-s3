@@ -37,6 +37,10 @@ class Module extends Component
     {
     }
 
+    public function getBasePath(): string
+    {
+    }
+
     /**
      * @param array<string, mixed> $config
      */
@@ -127,11 +131,27 @@ class Exception extends \Exception
 
 namespace yii\web;
 
+class AssetManager extends \yii\base\Component
+{
+    public string $baseUrl = '';
+    public string $basePath = '';
+}
+
 class Application extends \yii\base\Module
 {
     public Request $request;
 
     public User $user;
+
+    public Response $response;
+
+    public string $name = '';
+
+    /** @var \yii\web\AssetManager */
+    public $assetManager;
+
+    /** @var UrlManager */
+    public $urlManager;
 
     /** @var array<string, mixed> */
     public array $params = [];
@@ -143,6 +163,39 @@ class Application extends \yii\base\Module
     public function isDatabaseInstalled(): bool
     {
     }
+}
+
+class UrlManager extends \yii\base\Component
+{
+    /** @var array<int, UrlRuleInterface> */
+    public array $rules = [];
+
+    /**
+     * @param array<int, array<string, mixed>> $rules
+     */
+    public function addRules(array $rules, bool $append = true): void
+    {
+    }
+
+    /**
+     * @return array{0: string, 1: array<string, mixed>}
+     */
+    public function parseRequest(Request $request): array
+    {
+    }
+}
+
+interface UrlRuleInterface
+{
+    /**
+     * @param array<string, mixed> $params
+     */
+    public function createUrl($manager, $route, $params);
+
+    /**
+     * @return array{0: string, 1: array<string, mixed>}|false
+     */
+    public function parseRequest($manager, $request);
 }
 
 class Controller extends \yii\base\Component
@@ -168,10 +221,24 @@ class Controller extends \yii\base\Component
 
 class Response
 {
+    /**
+     * @param array<string, mixed> $options
+     */
+    public function sendFile(string $filePath, string $attachmentName = '', array $options = []): self
+    {
+    }
 }
 
 class Request
 {
+    public function setPathInfo(string $pathInfo): void
+    {
+    }
+
+    public function setUrl(string $url): void
+    {
+    }
+
     /**
      * @param string|null $name
      * @param mixed $defaultValue
@@ -209,6 +276,14 @@ class View extends \yii\base\Component
     }
 }
 
+class HttpException extends \Exception
+{
+}
+
+class NotFoundHttpException extends HttpException
+{
+}
+
 namespace yii\console;
 
 class Application extends \yii\base\Module
@@ -226,9 +301,10 @@ namespace yii\helpers;
 class Url
 {
     /**
-     * @param string|array<int, string> $url
+     * @param string|array<int|string, mixed> $url
+     * @param bool|string $scheme
      */
-    public static function to($url): string
+    public static function to($url, $scheme = false): string
     {
     }
 }
@@ -258,6 +334,14 @@ class Html
 class FileHelper
 {
     public static function createDirectory(string $path, int $mode = 0775, bool $recursive = true): bool
+    {
+    }
+
+    public static function removeDirectory(string $path): bool
+    {
+    }
+
+    public static function unlink(string $path): bool
     {
     }
 }

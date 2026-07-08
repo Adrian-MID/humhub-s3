@@ -7,6 +7,7 @@ use humhub\helpers\ControllerHelper;
 use humhub\modules\file\components\StorageManager;
 use humhub\modules\admin\permissions\ManageSettings;
 use humhub\modules\admin\widgets\SettingsMenu;
+use humhub\modules\humhubs3\components\MediaProxyRoute;
 use humhub\modules\ui\menu\MenuLink;
 use Yii;
 use yii\base\BaseObject;
@@ -24,6 +25,8 @@ class Events extends BaseObject
     {
         ComposerAutoload::ensureLoaded();
         Module::applyStorageManager();
+        Module::applyClassMaps();
+        MediaProxyRoute::registerUrlRule();
     }
 
     /**
@@ -44,6 +47,8 @@ class Events extends BaseObject
         {
             $fileModule->storageManagerClass = StorageManager::class;
         }
+
+        Module::removeClassMaps();
     }
 
     /**
