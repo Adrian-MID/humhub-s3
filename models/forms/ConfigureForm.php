@@ -4,6 +4,7 @@ namespace humhub\modules\humhubs3\models\forms;
 
 use humhub\components\SettingsManager;
 use humhub\modules\humhubs3\components\EndpointValidator;
+use humhub\modules\humhubs3\components\MediaProxyRoute;
 use humhub\modules\humhubs3\components\S3Client;
 use humhub\modules\humhubs3\Module;
 use Yii;
@@ -20,6 +21,7 @@ class ConfigureForm extends Model
     public string $secretKeyEnvVar = '';
     public string $prefix = 'humhub';
     public string $endpoint = '';
+    public string $mediaProxyPath = '';
     public bool $usePathStyle = false;
 
     /**
@@ -40,11 +42,13 @@ class ConfigureForm extends Model
                 'secretKeyEnvVar',
                 'prefix',
                 'endpoint',
+                'mediaProxyPath',
             ], 'string', 'max' => 255],
-            [['prefix', 'endpoint', 'accessKeyEnvVar', 'secretKeyEnvVar'], 'trim'],
+            [['prefix', 'endpoint', 'accessKeyEnvVar', 'secretKeyEnvVar', 'mediaProxyPath'], 'trim'],
             ['bucket', 'validateBucket'],
             ['region', 'validateRegion'],
             ['prefix', 'validatePrefix'],
+            ['mediaProxyPath', 'validateMediaProxyPath'],
             ['endpoint', 'validateEndpoint'],
             [['accessKeyEnvVar', 'secretKeyEnvVar'], 'validateEnvVarName'],
             ['accessKey', 'validateAccessKey'],
@@ -68,6 +72,7 @@ class ConfigureForm extends Model
             'secretKeyEnvVar' => Yii::t('HumhubS3Module.base', 'Secret Key Environment Variable'),
             'prefix' => Yii::t('HumhubS3Module.base', 'Object Prefix'),
             'endpoint' => Yii::t('HumhubS3Module.base', 'Custom Endpoint'),
+            'mediaProxyPath' => Yii::t('HumhubS3Module.base', 'Media Proxy Path'),
             'usePathStyle' => Yii::t('HumhubS3Module.base', 'Use path-style URLs'),
         ];
     }
@@ -93,6 +98,11 @@ class ConfigureForm extends Model
             ),
             'prefix' => Yii::t('HumhubS3Module.base', 'Optional folder prefix inside the bucket, e.g. "humhub".'),
             'endpoint' => Yii::t('HumhubS3Module.base', 'Leave empty for AWS S3. Use for S3-compatible services such as MinIO.'),
+            'mediaProxyPath' => Yii::t(
+                'HumhubS3Module.base',
+                'Single URL segment for public profile and branding assets. Leave empty for the default "{defaultPath}". Example: s3media',
+                ['defaultPath' => MediaProxyRoute::DEFAULT_PATH]
+            ),
             'usePathStyle' => Yii::t('HumhubS3Module.base', 'Enable for most S3-compatible endpoints such as MinIO.'),
             'secretKeyField' => Yii::t('HumhubS3Module.base', 'Leave blank to keep the existing secret access key.'),
         ];
@@ -161,6 +171,20 @@ class ConfigureForm extends Model
         if (!preg_match('/^[a-zA-Z0-9._\-\/]+$/', $prefix))
         {
             $this->addError($attribute, Yii::t('HumhubS3Module.base', 'Object prefix contains invalid characters.'));
+        }
+    }
+
+    public function validateMediaProxyPath(string $attribute): void
+    {
+        if ($this->mediaProxyPath === '')
+        {
+            return;
+        }
+
+        $error = MediaProxyRoute::getValidationError($this->mediaProxyPath);
+        if ($error !== null)
+        {
+            $this->addError($attribute, $error);
         }
     }
 
@@ -261,6 +285,7 @@ class ConfigureForm extends Model
         $this->secretKeyEnvVar = $settings['secretKeyEnvVar'];
         $this->prefix = $settings['prefix'];
         $this->endpoint = $settings['endpoint'];
+        $this->mediaProxyPath = $settings['mediaProxyPath'];
         $this->usePathStyle = (bool) $settings['usePathStyle'];
     }
 
@@ -295,6 +320,7 @@ class ConfigureForm extends Model
         $settings->set('secretKeyEnvVar', $this->secretKeyEnvVar);
         $settings->set('prefix', $this->prefix);
         $settings->set('endpoint', $this->endpoint);
+        $settings->set('mediaProxyPath', MediaProxyRoute::normalizeCustomSegment($this->mediaProxyPath));
         $settings->set('usePathStyle', (int) $this->usePathStyle);
 
         if ($this->secretKeyField !== '')
@@ -303,6 +329,7 @@ class ConfigureForm extends Model
         }
 
         Module::applyStorageManager();
+        Module::applyClassMaps();
 
         return true;
     }
@@ -358,6 +385,7 @@ class ConfigureForm extends Model
      *     secretKeyEnvVar: string,
      *     prefix: string,
      *     endpoint: string,
+     *     mediaProxyPath: string,
      *     usePathStyle: bool
      * }
      */
@@ -375,6 +403,7 @@ class ConfigureForm extends Model
             'secretKeyEnvVar' => self::getStoredString($settings, 'secretKeyEnvVar', ''),
             'prefix' => self::getStoredString($settings, 'prefix', 'humhub'),
             'endpoint' => self::getStoredString($settings, 'endpoint', ''),
+            'mediaProxyPath' => self::getStoredString($settings, 'mediaProxyPath', ''),
             'usePathStyle' => self::getStoredBool($settings, 'usePathStyle', false),
         ];
     }

@@ -76,6 +76,9 @@ use yii\web\View;
                 : '',
         ]); ?>
         <?= $form->field($model, 'prefix')->textInput(); ?>
+        <?= $form->field($model, 'mediaProxyPath')->textInput([
+            'placeholder' => 's3media',
+        ]); ?>
         <?= $form->field($model, 'endpoint')->textInput(); ?>
         <?= $form->field($model, 'usePathStyle')->checkbox(); ?>
 

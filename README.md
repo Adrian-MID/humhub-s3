@@ -9,14 +9,16 @@ Store HumHub file uploads in Amazon S3 or an S3-compatible service (MinIO, Wasab
 ## Features
 
 - Drop-in replacement for HumHub's default file storage
+- S3-backed profile images, banners, and site branding (logo, icons, login background, mail header)
 - Works with AWS S3 and S3-compatible endpoints
-- Write-through local cache for compatibility with HumHub's file handling
+- Write-through local runtime cache for compatibility with HumHub's file and image handling
+- Public media proxy for profile/branding assets (same behaviour as legacy `/uploads/` URLs)
 - Admin UI with connection testing before enabling
 - Optional credentials from environment variables
 
 ## Requirements
 
-- HumHub 1.14 or later
+- HumHub 1.14 or later. 
 - PHP 8.0 or later (with `curl` extension)
 - An S3 bucket and IAM credentials with appropriate permissions
 
@@ -26,7 +28,7 @@ Use a separate Composer project in `protected/modules/`. The module installs to 
 
 Do not run `composer init` or `composer require` at the HumHub web root.
 
-**One-time setup** — copy the Composer scaffold (once per HumHub instance):
+**One-time setup** - copy the Composer scaffold (once per HumHub instance):
 
 ```bash
 cd /path/to/humhub/protected/modules
@@ -37,7 +39,7 @@ curl -fsSL https://raw.githubusercontent.com/Adrian-MID/humhub-s3/main/modules.c
 
 ```bash
 cd /path/to/humhub/protected/modules
-composer require adrian-mid/humhub-s3:^1.0
+composer require adrian-mid/humhub-s3:^1.1
 php ../yii cache/flush-all
 ```
 
@@ -55,6 +57,7 @@ Enable **HumHub S3** under *Administration → Modules*.
 | Access Key ID | IAM access key |
 | Secret Access Key | IAM secret key (leave blank when saving to keep the existing key) |
 | Object Prefix | Optional folder prefix inside the bucket (default: `humhub`) |
+| Media Proxy Path | Single URL segment for public assets, letters and numbers only (default: module path `humhub-s3/media/serve`) |
 | Custom Endpoint | Leave empty for AWS S3 |
 | Use path-style URLs | Enable for most S3-compatible endpoints |
 
@@ -70,21 +73,59 @@ Replace `YOUR-BUCKET` and adjust the prefix if you changed the default.
 
 ## How it works
 
-HumHub stores uploaded files through a pluggable `StorageManager`. When this module is enabled and configured, it replaces the default local storage manager with an S3-backed implementation.
+HumHub uses two separate storage paths. This module replaces both when enabled and configured.
 
-Files are written to a local runtime cache first, then synced to S3. Downloads prefer the cache and fetch from S3 on demand. HumHub continues to handle access control — objects are not exposed via public S3 URLs.
+### File module attachments (private)
 
-Objects are stored under:
+HumHub stores uploaded files through a pluggable `StorageManager`. When S3 is active, the module swaps in `S3StorageManager`.
+
+Files are written to a local runtime cache first, then synced to S3. Downloads prefer the cache and fetch from S3 on demand. HumHub continues to handle access control through `File::canView()` - objects are not exposed via public S3 URLs.
+
+Object keys:
 
 ```
 {prefix}/{guid[0]}/{guid[1]}/{guid}/{variant}
 ```
 
-Example key: `humhub/a/3/a3f2…/file`
+Example: `humhub/a/3/a3f2…/file`
+
+### Profile images and site branding (public)
+
+HumHub core stores profile images, banners, logos, icons, and similar assets outside the File module, directly under `webroot/uploads/` or the asset manager. On ephemeral containers those paths are lost between restarts.
+
+When S3 is active, the module:
+
+1. Replaces HumHub's media helper classes with S3-backed implementations (via Yii class maps)
+2. Stores objects in S3 under predictable keys (see below)
+3. Serves them through a configurable read-only proxy (default: `/humhub-s3/media/serve`) with strict path validation
+
+The media proxy is **publicly accessible without login**, matching legacy nginx behaviour for `/uploads/profile_image/` and branding assets. File module downloads still require authentication and permission checks.
+
+Media object keys:
+
+```
+{prefix}/profile_image/{guid}.jpg
+{prefix}/profile_image/{guid}_org.jpg
+{prefix}/profile_image/banner/{guid}.jpg
+{prefix}/branding/logo.png
+{prefix}/branding/icon/{size}x{size}.png
+{prefix}/branding/login-bg.png
+{prefix}/branding/mail-header.png
+```
+
+Example proxy URLs (with default path):
+
+```
+/humhub-s3/media/serve?type=profile&guid={guid}&variant=
+/humhub-s3/media/serve?type=banner&guid={guid}&variant=_org
+/humhub-s3/media/serve?path=branding/icon/192x192.png
+```
+
+Set **Media Proxy Path** to a single alphanumeric segment (e.g. `s3media`) to use `/s3media?path=...` instead. Slashes and special characters are not allowed, and paths already used by HumHub are rejected.
 
 ## Limitations
 
-- **Existing files are not migrated.** Files uploaded before enabling S3 remain on the local filesystem.
+- **Existing files are not migrated.** Files uploaded before enabling S3 remain on the local filesystem. Legacy paths are used as a fallback when serving media until re-uploaded.
 - **Large files are streamed** during upload and download, but very large files still depend on PHP and web server limits.
 - **No multipart upload.** Very large files use a single PUT request.
 
@@ -92,8 +133,8 @@ Example key: `humhub/a/3/a3f2…/file`
 
 This module is maintained with strict static analysis and coding standards:
 
-- **PHPStan level 10** — `composer phpstan`
-- **PHP CS Fixer** (PER-CS + PHP 8.2 migration rules) — `composer cs:check` / `composer cs:fix`
+- **PHPStan level 10** - `composer phpstan`
+- **PHP CS Fixer** (PER-CS + PHP 8.2 migration rules) - `composer cs:check` / `composer cs:fix`
 
 Run all checks:
 
@@ -110,7 +151,7 @@ Disabling or removing the module reverts to local filesystem storage and deletes
 
 ## License
 
-GPL-3.0-or-later — see [LICENSE](LICENSE).
+GPL-3.0-or-later - see [LICENSE](LICENSE).
 
 ## Changelog
 

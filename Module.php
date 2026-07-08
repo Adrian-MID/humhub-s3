@@ -12,6 +12,22 @@ use yii\helpers\Url;
 class Module extends BaseModule
 {
     /**
+     * Maps HumHub media classes to S3-backed override files.
+     *
+     * Yii class maps must point to file paths, not replacement class names.
+     *
+     * @var array<string, string>
+     */
+    private const MEDIA_CLASS_MAP = [
+        'humhub\libs\ProfileImage' => '@humhub/modules/humhubs3/libs/S3ProfileImage.php',
+        'humhub\libs\ProfileBannerImage' => '@humhub/modules/humhubs3/libs/S3ProfileBannerImage.php',
+        'humhub\libs\LogoImage' => '@humhub/modules/humhubs3/libs/S3LogoImage.php',
+        'humhub\modules\web\pwa\widgets\SiteIcon' => '@humhub/modules/humhubs3/libs/S3SiteIcon.php',
+        'humhub\modules\user\helpers\LoginBackgroundImageHelper' => '@humhub/modules/humhubs3/libs/S3LoginBackgroundImageHelper.php',
+        'humhub\widgets\mails\MailHeaderImage' => '@humhub/modules/humhubs3/libs/S3MailHeaderImage.php',
+    ];
+
+    /**
      * @inheritdoc
      */
     public function init(): void
@@ -53,5 +69,37 @@ class Module extends BaseModule
         }
 
         $fileModule->storageManagerClass = StorageManager::class;
+    }
+
+    /**
+     * Swaps HumHub media helpers for S3-backed implementations when storage is active.
+     *
+     * Profile images, banners, and site branding otherwise write to webroot/uploads/ and
+     * break on ephemeral hosts. Class maps keep the public HumHub APIs unchanged.
+     */
+    public static function applyClassMaps(): void
+    {
+        if (!ConfigureForm::isActive())
+        {
+            self::removeClassMaps();
+
+            return;
+        }
+
+        foreach (self::MEDIA_CLASS_MAP as $class => $path)
+        {
+            Yii::$classMap[$class] = $path;
+        }
+    }
+
+    /**
+     * Restores HumHub's default media classes when S3 media overrides are removed.
+     */
+    public static function removeClassMaps(): void
+    {
+        foreach (array_keys(self::MEDIA_CLASS_MAP) as $class)
+        {
+            unset(Yii::$classMap[$class]);
+        }
     }
 }

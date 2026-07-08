@@ -11,3 +11,5 @@ parameters:
         - phpstan/stubs/yii2.php
         - phpstan/stubs/humhub.php
         - phpstan/stubs/yii-app.php
+        - phpstan/stubs/imagine.php
+        - phpstan/stubs/core-classes.php
