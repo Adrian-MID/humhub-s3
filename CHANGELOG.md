@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. Version numbers follow [Semantic Versioning](https://semver.org/).
 
+## 1.2.0 - 2026-07-08
+- Incremented MINOR version number for Packagist release index debugging.
+
+## 1.1.1 - 2026-07-08
+- Incremented PATCH version number for Packagist release index debugging.
+
 ## 1.1.0 - 2026-07-08
 
 ### Added
