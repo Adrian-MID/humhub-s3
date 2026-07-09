@@ -1,5 +1,6 @@
 <?php
 
+use humhub\modules\humhubs3\components\LocalRuntimeStore;
 use humhub\modules\humhubs3\models\forms\ConfigureForm;
 use humhub\modules\ui\form\widgets\ActiveForm;
 use yii\helpers\Html;
@@ -9,6 +10,7 @@ use yii\web\View;
  * @var View $this
  * @var ConfigureForm $model
  * @var bool $isActive
+ * @var array{fileCount: int, sizeBytes: int} $localStoreStats
  */
 ?>
 
@@ -98,6 +100,64 @@ use yii\web\View;
         <p class="help-block">
             <?= Yii::t('HumhubS3Module.base', 'Use "Test Connection" to verify the current form values by uploading, downloading, and deleting a temporary file in the bucket.'); ?>
         </p>
+
+        <?php ActiveForm::end(); ?>
+    </div>
+</div>
+
+<div class="panel panel-default">
+    <div class="panel-heading">
+        <?= Yii::t('HumhubS3Module.base', '<strong>Local Runtime Cache</strong>'); ?>
+    </div>
+    <div class="panel-body">
+        <p class="help-block">
+            <?= Yii::t(
+                'HumhubS3Module.base',
+                'This module keeps temporary local copies of files from S3 in <code>protected/runtime/humhub-s3</code> for image processing and streaming. S3 remains the durable store. Clearing this cache does not delete anything from your bucket.'
+            ); ?>
+        </p>
+
+        <h4><?= Yii::t('HumhubS3Module.base', 'When to clear it'); ?></h4>
+        <p class="help-block">
+            <?= Yii::t(
+                'HumhubS3Module.base',
+                'Clear the local store when this server may be serving outdated cached files. This is common when multiple ephemeral instances share the same S3 bucket. For example, after branding assets (logo, favicon, login background), profile pictures, or banners are uploaded on a different server or container. Emptying the cache forces this instance to re-download the latest files from S3 on the next request.'
+            ); ?>
+        </p>
+
+        <?php if ($localStoreStats['fileCount'] > 0): ?>
+            <p class="help-block">
+                <?= Yii::t(
+                    'HumhubS3Module.base',
+                    'Cached files on this server: {count} ({size})',
+                    [
+                        'count' => $localStoreStats['fileCount'],
+                        'size' => LocalRuntimeStore::formatSize($localStoreStats['sizeBytes']),
+                    ]
+                ); ?>
+            </p>
+        <?php else: ?>
+            <p class="help-block">
+                <?= Yii::t('HumhubS3Module.base', 'No cached files on this server.'); ?>
+            </p>
+        <?php endif; ?>
+
+        <?php $cacheForm = ActiveForm::begin(['id' => 'humhub-s3-cache-form']); ?>
+
+        <div class="form-group">
+            <?= Html::submitButton(Yii::t('HumhubS3Module.base', 'Empty Local Store'), [
+                'class' => 'btn btn-danger',
+                'name' => 'clearLocalStore',
+                'value' => '1',
+                'onclick' => 'return confirm(' . json_encode(
+                    Yii::t(
+                        'HumhubS3Module.base',
+                        'Delete all locally cached files in protected/runtime/humhub-s3 on this server? Files in S3 are not affected.'
+                    ),
+                    JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP
+                ) . ');',
+            ]); ?>
+        </div>
 
         <?php ActiveForm::end(); ?>
     </div>

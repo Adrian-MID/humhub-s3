@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here. Version numbers follow [Semantic Versioning](https://semver.org/).
 
+## 1.2.5 - 2026-07-09
+
+### Added
+
+- Admin control to empty the local runtime cache in `protected/runtime/humhub-s3`, with guidance on when to use it (for example, after branding assets are uploaded on another ephemeral server sharing the same S3 bucket).
+- **Empty S3 Local Store** link in Administration → Settings for the same cache-clearing action.
+
 ## 1.2.0 - 2026-07-08
 - Incremented MINOR version number for Packagist release index debugging.
 
