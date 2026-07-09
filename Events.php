@@ -52,7 +52,7 @@ class Events extends BaseObject
     }
 
     /**
-     * Adds "HumHub S3" under Administration → Settings.
+     * Adds HumHub S3 settings and maintenance actions under Administration → Settings.
      */
     public static function onSettingsMenuInit(Event $event): void
     {
@@ -65,6 +65,20 @@ class Events extends BaseObject
             'sortOrder' => 650,
             'isActive' => ControllerHelper::isActivePath('humhub-s3', 'admin'),
             'isVisible' => Yii::$app->user->can(ManageSettings::class),
+        ]));
+
+        $menu->addEntry(new MenuLink([
+            'label' => Yii::t('HumhubS3Module.base', 'Empty S3 Local Store'),
+            'url' => ['/humhub-s3/admin/clear-local-store'],
+            'icon' => 'trash',
+            'sortOrder' => 651,
+            'isVisible' => Yii::$app->user->can(ManageSettings::class),
+            'htmlOptions' => [
+                'data-action-confirm' => Yii::t(
+                    'HumhubS3Module.base',
+                    'Delete all locally cached files in protected/runtime/humhub-s3 on this server? Files in S3 are not affected.'
+                ),
+            ],
         ]));
     }
 }
