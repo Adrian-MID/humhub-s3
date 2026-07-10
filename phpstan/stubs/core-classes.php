@@ -184,11 +184,7 @@ class File extends \yii\db\ActiveRecord
 
 class RichTextToEmailHtmlConverter
 {
-    /**
-     * @param object $linkBlock
-     * @return object
-     */
-    protected function tokenizeBlock($linkBlock)
+    protected function tokenizeBlock(\humhub\modules\content\widgets\richtext\extensions\link\LinkParserBlock $linkBlock): \humhub\modules\content\widgets\richtext\extensions\link\LinkParserBlock
     {
     }
 }

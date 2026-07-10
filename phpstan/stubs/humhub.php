@@ -773,3 +773,18 @@ class RichTextLinkExtensionMatch
     {
     }
 }
+
+class LinkParserBlock
+{
+    public function getUrl(): ?string
+    {
+    }
+
+    public function setUrl(string $url): void
+    {
+    }
+
+    public function getFileId(): ?int
+    {
+    }
+}
