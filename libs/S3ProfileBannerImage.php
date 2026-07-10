@@ -79,23 +79,6 @@ class ProfileBannerImage extends ProfileImage
     }
 
     /**
-     * @inheritdoc
-     */
-    public function getUrl($prefix = '', $scheme = false)
-    {
-        if ($this->hasStoredVariant($prefix))
-        {
-            return S3MediaStorage::buildProxyUrl([
-                'type' => 'banner',
-                'guid' => $this->guid,
-                'variant' => $prefix,
-            ], (bool) $scheme);
-        }
-
-        return parent::getUrl($prefix, $scheme);
-    }
-
-    /**
      * @param mixed $width
      * @param array<string, mixed> $cfg
      * @inheritdoc

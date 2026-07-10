@@ -7,7 +7,6 @@ use humhub\helpers\ControllerHelper;
 use humhub\modules\file\components\StorageManager;
 use humhub\modules\admin\permissions\ManageSettings;
 use humhub\modules\admin\widgets\SettingsMenu;
-use humhub\modules\humhubs3\components\MediaProxyRoute;
 use humhub\modules\ui\menu\MenuLink;
 use Yii;
 use yii\base\BaseObject;
@@ -26,7 +25,7 @@ class Events extends BaseObject
         ComposerAutoload::ensureLoaded();
         Module::applyStorageManager();
         Module::applyClassMaps();
-        MediaProxyRoute::registerUrlRule();
+        Module::applyFileControllerMap();
     }
 
     /**
@@ -46,6 +45,7 @@ class Events extends BaseObject
         if ($fileModule instanceof \humhub\modules\file\Module)
         {
             $fileModule->storageManagerClass = StorageManager::class;
+            unset($fileModule->controllerMap['file']);
         }
 
         Module::removeClassMaps();
@@ -65,20 +65,6 @@ class Events extends BaseObject
             'sortOrder' => 650,
             'isActive' => ControllerHelper::isActivePath('humhub-s3', 'admin'),
             'isVisible' => Yii::$app->user->can(ManageSettings::class),
-        ]));
-
-        $menu->addEntry(new MenuLink([
-            'label' => Yii::t('HumhubS3Module.base', 'Empty S3 Local Store'),
-            'url' => ['/humhub-s3/admin/clear-local-store'],
-            'icon' => 'trash',
-            'sortOrder' => 651,
-            'isVisible' => Yii::$app->user->can(ManageSettings::class),
-            'htmlOptions' => [
-                'data-action-confirm' => Yii::t(
-                    'HumhubS3Module.base',
-                    'Delete all locally cached files in protected/runtime/humhub-s3 on this server? Files in S3 are not affected.'
-                ),
-            ],
         ]));
     }
 }

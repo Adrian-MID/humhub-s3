@@ -3,8 +3,8 @@
 namespace humhub\modules\humhubs3\models\forms;
 
 use humhub\components\SettingsManager;
+use humhub\modules\humhubs3\components\BucketPolicyChecker;
 use humhub\modules\humhubs3\components\EndpointValidator;
-use humhub\modules\humhubs3\components\MediaProxyRoute;
 use humhub\modules\humhubs3\components\S3Client;
 use humhub\modules\humhubs3\Module;
 use Yii;
@@ -12,6 +12,12 @@ use yii\base\Model;
 
 class ConfigureForm extends Model
 {
+    public const DEFAULT_PRESIGNED_URL_TTL = 900;
+
+    public const MIN_PRESIGNED_URL_TTL = 60;
+
+    public const MAX_PRESIGNED_URL_TTL = 604800;
+
     public bool $enabled = false;
     public string $bucket = '';
     public string $region = 'us-east-1';
@@ -21,7 +27,7 @@ class ConfigureForm extends Model
     public string $secretKeyEnvVar = '';
     public string $prefix = 'humhub';
     public string $endpoint = '';
-    public string $mediaProxyPath = '';
+    public int $presignedUrlTtl = self::DEFAULT_PRESIGNED_URL_TTL;
     public bool $usePathStyle = false;
 
     /**
@@ -32,6 +38,7 @@ class ConfigureForm extends Model
     {
         return [
             [['enabled', 'usePathStyle'], 'boolean'],
+            [['presignedUrlTtl'], 'integer', 'min' => self::MIN_PRESIGNED_URL_TTL, 'max' => self::MAX_PRESIGNED_URL_TTL],
             [['bucket', 'region'], 'required'],
             [[
                 'bucket',
@@ -42,13 +49,11 @@ class ConfigureForm extends Model
                 'secretKeyEnvVar',
                 'prefix',
                 'endpoint',
-                'mediaProxyPath',
             ], 'string', 'max' => 255],
-            [['prefix', 'endpoint', 'accessKeyEnvVar', 'secretKeyEnvVar', 'mediaProxyPath'], 'trim'],
+            [['prefix', 'endpoint', 'accessKeyEnvVar', 'secretKeyEnvVar'], 'trim'],
             ['bucket', 'validateBucket'],
             ['region', 'validateRegion'],
             ['prefix', 'validatePrefix'],
-            ['mediaProxyPath', 'validateMediaProxyPath'],
             ['endpoint', 'validateEndpoint'],
             [['accessKeyEnvVar', 'secretKeyEnvVar'], 'validateEnvVarName'],
             ['accessKey', 'validateAccessKey'],
@@ -72,7 +77,7 @@ class ConfigureForm extends Model
             'secretKeyEnvVar' => Yii::t('HumhubS3Module.base', 'Secret Key Environment Variable'),
             'prefix' => Yii::t('HumhubS3Module.base', 'Object Prefix'),
             'endpoint' => Yii::t('HumhubS3Module.base', 'Custom Endpoint'),
-            'mediaProxyPath' => Yii::t('HumhubS3Module.base', 'Media Proxy Path'),
+            'presignedUrlTtl' => Yii::t('HumhubS3Module.base', 'Presigned Download URL TTL (seconds)'),
             'usePathStyle' => Yii::t('HumhubS3Module.base', 'Use path-style URLs'),
         ];
     }
@@ -98,12 +103,15 @@ class ConfigureForm extends Model
             ),
             'prefix' => Yii::t('HumhubS3Module.base', 'Optional folder prefix inside the bucket, e.g. "humhub".'),
             'endpoint' => Yii::t('HumhubS3Module.base', 'Leave empty for AWS S3. Use for S3-compatible services such as MinIO.'),
-            'mediaProxyPath' => Yii::t(
+            'presignedUrlTtl' => Yii::t(
                 'HumhubS3Module.base',
-                'Single URL segment for public profile and branding assets. Leave empty for the default "{defaultPath}". Example: s3media',
-                ['defaultPath' => MediaProxyRoute::DEFAULT_PATH]
+                'How long private file download links remain valid after HumHub authorizes the request. Default: {default} seconds.',
+                ['default' => self::DEFAULT_PRESIGNED_URL_TTL]
             ),
-            'usePathStyle' => Yii::t('HumhubS3Module.base', 'Enable for most S3-compatible endpoints such as MinIO.'),
+            'usePathStyle' => Yii::t(
+                'HumhubS3Module.base',
+                'See the explanation below. Leave disabled for standard Amazon S3 buckets.'
+            ),
             'secretKeyField' => Yii::t('HumhubS3Module.base', 'Leave blank to keep the existing secret access key.'),
         ];
     }
@@ -171,20 +179,6 @@ class ConfigureForm extends Model
         if (!preg_match('/^[a-zA-Z0-9._\-\/]+$/', $prefix))
         {
             $this->addError($attribute, Yii::t('HumhubS3Module.base', 'Object prefix contains invalid characters.'));
-        }
-    }
-
-    public function validateMediaProxyPath(string $attribute): void
-    {
-        if ($this->mediaProxyPath === '')
-        {
-            return;
-        }
-
-        $error = MediaProxyRoute::getValidationError($this->mediaProxyPath);
-        if ($error !== null)
-        {
-            $this->addError($attribute, $error);
         }
     }
 
@@ -285,7 +279,7 @@ class ConfigureForm extends Model
         $this->secretKeyEnvVar = $settings['secretKeyEnvVar'];
         $this->prefix = $settings['prefix'];
         $this->endpoint = $settings['endpoint'];
-        $this->mediaProxyPath = $settings['mediaProxyPath'];
+        $this->presignedUrlTtl = $settings['presignedUrlTtl'];
         $this->usePathStyle = (bool) $settings['usePathStyle'];
     }
 
@@ -320,7 +314,7 @@ class ConfigureForm extends Model
         $settings->set('secretKeyEnvVar', $this->secretKeyEnvVar);
         $settings->set('prefix', $this->prefix);
         $settings->set('endpoint', $this->endpoint);
-        $settings->set('mediaProxyPath', MediaProxyRoute::normalizeCustomSegment($this->mediaProxyPath));
+        $settings->set('presignedUrlTtl', $this->presignedUrlTtl);
         $settings->set('usePathStyle', (int) $this->usePathStyle);
 
         if ($this->secretKeyField !== '')
@@ -330,8 +324,17 @@ class ConfigureForm extends Model
 
         Module::applyStorageManager();
         Module::applyClassMaps();
+        Module::applyFileControllerMap();
 
         return true;
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    public function testBucketPolicy(): array
+    {
+        return BucketPolicyChecker::verify($this);
     }
 
     /**
@@ -355,7 +358,7 @@ class ConfigureForm extends Model
             ];
         }
 
-        return self::createClientFromForm($this)->testConnection();
+        return self::createClientFromForm($this)->testConnection($this->prefix);
     }
 
     public static function isActive(): bool
@@ -385,7 +388,7 @@ class ConfigureForm extends Model
      *     secretKeyEnvVar: string,
      *     prefix: string,
      *     endpoint: string,
-     *     mediaProxyPath: string,
+     *     presignedUrlTtl: int,
      *     usePathStyle: bool
      * }
      */
@@ -403,9 +406,48 @@ class ConfigureForm extends Model
             'secretKeyEnvVar' => self::getStoredString($settings, 'secretKeyEnvVar', ''),
             'prefix' => self::getStoredString($settings, 'prefix', 'humhub'),
             'endpoint' => self::getStoredString($settings, 'endpoint', ''),
-            'mediaProxyPath' => self::getStoredString($settings, 'mediaProxyPath', ''),
+            'presignedUrlTtl' => self::getStoredInt($settings, 'presignedUrlTtl', self::DEFAULT_PRESIGNED_URL_TTL),
             'usePathStyle' => self::getStoredBool($settings, 'usePathStyle', false),
         ];
+    }
+
+    public static function getPresignedUrlTtl(): int
+    {
+        $ttl = self::getSettings()['presignedUrlTtl'];
+
+        if ($ttl < self::MIN_PRESIGNED_URL_TTL)
+        {
+            return self::DEFAULT_PRESIGNED_URL_TTL;
+        }
+
+        if ($ttl > self::MAX_PRESIGNED_URL_TTL)
+        {
+            return self::MAX_PRESIGNED_URL_TTL;
+        }
+
+        return $ttl;
+    }
+
+    private static function getStoredInt(SettingsManager $settings, string $key, int $default): int
+    {
+        $value = $settings->get($key, $default);
+
+        if (is_int($value))
+        {
+            return $value;
+        }
+
+        if (is_string($value) && ctype_digit($value))
+        {
+            return (int) $value;
+        }
+
+        if (is_scalar($value))
+        {
+            return (int) $value;
+        }
+
+        return $default;
     }
 
     private static function getStoredString(SettingsManager $settings, string $key, string $default): string
@@ -535,7 +577,7 @@ class ConfigureForm extends Model
         return $settings['secretKey'];
     }
 
-    private static function createClientFromForm(self $form): S3Client
+    public static function createClientFromForm(self $form): S3Client
     {
         return self::createClientFromCredentials(
             $form->resolveAccessKeyForConnection(),
@@ -597,7 +639,7 @@ class ConfigureForm extends Model
         return self::getSettings()['secretKey'];
     }
 
-    private function validateSettingsForConnection(): bool
+    public function validateSettingsForConnection(): bool
     {
         return $this->bucket !== ''
             && $this->region !== ''

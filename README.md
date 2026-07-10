@@ -11,53 +11,48 @@ Store HumHub file uploads in Amazon S3 or an S3-compatible service (MinIO, Wasab
 - Drop-in replacement for HumHub's default file storage
 - S3-backed profile images, banners, and site branding (logo, icons, login background, mail header)
 - Works with AWS S3 and S3-compatible endpoints
-- Write-through local runtime cache for compatibility with HumHub's file and image handling
-- Public media proxy for profile/branding assets (same behaviour as legacy `/uploads/` URLs)
+- **Public media** served via direct bucket URLs (logo, icons, profile images)
+- **Private attachments** served via presigned S3 URLs after HumHub permission checks
+- Temporary local files only during upload and image processing
 - Admin UI with connection testing before enabling
 - Optional credentials from environment variables
 
 ## Requirements
 
-- HumHub 1.14 or later. 
+- HumHub 1.18 or later. Version 2.x is tested and officially supported only on HumHub 1.18 and up.
 - PHP 8.0 or later (with `curl` extension)
 - An S3 bucket and IAM credentials with appropriate permissions
 
+If you run HumHub below 1.18, stay on the 1.x release line (`composer require adrian-mid/humhub-s3:^1.2`).
+
 ## Installation
 
-Use a separate Composer project in `protected/modules/`. The module installs to `protected/modules/humhub-s3/` and its dependencies go to `protected/modules/vendor/`, leaving HumHub's `protected/vendor/` tree untouched.
-
-Do not run `composer init` or `composer require` at the HumHub web root.
-
-**One-time setup** - copy the Composer scaffold (once per HumHub instance):
-
 ```bash
-cd /path/to/humhub/protected/modules
-curl -fsSL https://raw.githubusercontent.com/Adrian-MID/humhub-s3/main/modules.composer.json -o composer.json
+cd protected/modules
+composer require adrian-mid/humhub-s3
 ```
 
-**Install or update:**
-
+## Upgrade to the latest version
 ```bash
-cd /path/to/humhub/protected/modules
-composer require adrian-mid/humhub-s3:^1.1
-php ../yii cache/flush-all
+cd protected/modules
+composer require adrian-mid/humhub-s3^2.0
 ```
 
 Enable **HumHub S3** under *Administration → Modules*.
 
-> HumHub 1.16+ processes module disable and removal via background queue jobs. Ensure cron is running (`php protected/yii cron/run`) or run the queue worker manually (`php protected/yii queue/run`).
+> HumHub processes module disable and removal via background queue jobs. Ensure cron is running (`php protected/yii cron/run`) or run the queue worker manually (`php protected/yii queue/run`).
 
 ## Configuration
 
 | Setting | Description |
 |---------|-------------|
 | Enable HumHub S3 | Activates remote storage for new uploads |
-| Bucket Name | Target S3 bucket (lowercase, 3–63 characters) |
+| Bucket Name | Target S3 bucket (lowercase, 3-63 characters) |
 | AWS Region | e.g. `ap-southeast-2` |
 | Access Key ID | IAM access key |
 | Secret Access Key | IAM secret key (leave blank when saving to keep the existing key) |
-| Object Prefix | Optional folder prefix inside the bucket (default: `humhub`) |
-| Media Proxy Path | Single URL segment for public assets, letters and numbers only (default: module path `humhub-s3/media/serve`) |
+| Object Prefix | Optional folder prefix inside the bucket (default `humhub`) |
+| Presigned Download URL TTL | Lifetime in seconds for private file download links (default 900 seconds) |
 | Custom Endpoint | Leave empty for AWS S3 |
 | Use path-style URLs | Enable for most S3-compatible endpoints |
 
@@ -69,89 +64,90 @@ HTTP endpoints are only allowed for `localhost`. Metadata IP addresses (e.g. `16
 
 If you prefer to keep your AWS API key out of the database, you can configure optional environment variable names for credentials (e.g. `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`). When set and present on the server, they take precedence over database-stored values and database stored values can be empty.
 
-Replace `YOUR-BUCKET` and adjust the prefix if you changed the default.
+### Bucket policy (required)
 
-## How it works
+HumHub needs two kinds of S3 access.
 
-HumHub uses two separate storage paths. This module replaces both when enabled and configured.
+1. **HumHub IAM user** can read, write, and delete all objects under your configured prefix (private attachments, presigned downloads, connection tests).
+2. **Anonymous public read** applies only to `branding/*` and `profile_image/*` (logos, icons, profile pictures).
 
-### File module attachments (private)
+Apply a bucket policy like the one shown in *Administration → Settings → HumHub S3* (adjust bucket, prefix, and IAM user ARN). Below is an example for bucket `your-bucket`, prefix `humhub`, and IAM user `arn:aws:iam::123456789012:user/humhub-media`.
 
-HumHub stores uploaded files through a pluggable `StorageManager`. When S3 is active, the module swaps in `S3StorageManager`.
-
-Files are written to a local runtime cache first, then synced to S3. Downloads prefer the cache and fetch from S3 on demand. HumHub continues to handle access control through `File::canView()` - objects are not exposed via public S3 URLs.
-
-Object keys:
-
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "HumHubServiceObjectAccess",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::123456789012:user/humhub-media"
+      },
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::your-bucket/humhub/*"
+    },
+    {
+      "Sid": "HumHubServiceListAccess",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::123456789012:user/humhub-media"
+      },
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::your-bucket",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "humhub/*",
+            "humhub"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "HumHubPublicMedia",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": [
+        "arn:aws:s3:::your-bucket/humhub/branding/*",
+        "arn:aws:s3:::your-bucket/humhub/profile_image/*"
+      ]
+    }
+  ]
+}
 ```
-{prefix}/{guid[0]}/{guid[1]}/{guid}/{variant}
-```
 
-Example: `humhub/a/3/a3f2…/file`
+**Important.** Remove any existing policy statements that **explicitly deny** `s3:GetObject` for your HumHub IAM user outside the public prefixes. AWS evaluates Deny before Allow. A broad or misplaced Deny will block private uploads, downloads, and presigned URLs even when Allow statements are present.
 
-### Profile images and site branding (public)
+File module attachments are **not** exposed anonymously. Only the HumHub IAM user can read those keys. Adjust S3 Block Public Access so scoped public read on branding and profile images is permitted.
 
-HumHub core stores profile images, banners, logos, icons, and similar assets outside the File module, directly under `webroot/uploads/` or the asset manager. On ephemeral containers those paths are lost between restarts.
+## Upgrading from 1.x
 
-When S3 is active, the module:
+Version 2.0 requires HumHub 1.18 or later. It removes the HumHub media proxy. After upgrading,
 
-1. Replaces HumHub's media helper classes with S3-backed implementations (via Yii class maps)
-2. Stores objects in S3 under predictable keys (see below)
-3. Serves them through a configurable read-only proxy (default: `/humhub-s3/media/serve`) with strict path validation
-
-The media proxy is **publicly accessible without login**, matching legacy nginx behaviour for `/uploads/profile_image/` and branding assets. File module downloads still require authentication and permission checks.
-
-Media object keys:
-
-```
-{prefix}/profile_image/{guid}.jpg
-{prefix}/profile_image/{guid}_org.jpg
-{prefix}/profile_image/banner/{guid}.jpg
-{prefix}/branding/logo.png
-{prefix}/branding/icon/{size}x{size}.png
-{prefix}/branding/login-bg.png
-{prefix}/branding/mail-header.png
-```
-
-Example proxy URLs (with default path):
-
-```
-/humhub-s3/media/serve?type=profile&guid={guid}&variant=
-/humhub-s3/media/serve?type=banner&guid={guid}&variant=_org
-/humhub-s3/media/serve?path=branding/icon/192x192.png
-```
-
-Set **Media Proxy Path** to a single alphanumeric segment (e.g. `s3media`) to use `/s3media?path=...` instead. Slashes and special characters are not allowed, and paths already used by HumHub are rejected.
+1. Confirm HumHub is 1.18 or later. If not, stay on `adrian-mid/humhub-s3` 1.x.
+2. Add the bucket policy for `branding/*` and `profile_image/*` (see above).
+3. Remove any reverse-proxy or nginx rules pointing at the old media proxy path (`/humhub-s3/media/serve` or your custom **Media Proxy Path**).
+4. Verify branding and profile images load from S3 URLs in the browser.
+5. Verify private file downloads redirect to S3 after login.
 
 ## Limitations
 
-- **Existing files are not migrated.** Files uploaded before enabling S3 remain on the local filesystem. Legacy paths are used as a fallback when serving media until re-uploaded.
-- **Large files are streamed** during upload and download, but very large files still depend on PHP and web server limits.
-- **No multipart upload.** Very large files use a single PUT request.
-
-## Development
-
-This module is maintained with strict static analysis and coding standards:
-
-- **PHPStan level 10** - `composer phpstan`
-- **PHP CS Fixer** (PER-CS + PHP 8.2 migration rules) - `composer cs:check` / `composer cs:fix`
-
-Run all checks:
-
-```bash
-composer install
-composer lint
-```
-
-CI runs the same checks on push and pull requests via GitHub Actions.
+- **Existing files are not migrated.** Re-upload branding and profile images after enabling S3 so they exist in the bucket.
+- **Large files** use a single PUT request (no multipart upload).
+- **Very large files** still depend on PHP and web server limits during upload processing.
 
 ## Uninstall
 
-Disabling or removing the module reverts to local filesystem storage and deletes all module settings (including stored credentials). On HumHub 1.16+, ensure the queue/cron is running so the background job completes.
+Disabling or removing the module reverts to local filesystem storage and deletes all module settings (including stored credentials). Ensure the queue or cron is running so the background job completes.
 
 ## License
 
-GPL-3.0-or-later - see [LICENSE](LICENSE).
+GPL-3.0-or-later. See [LICENSE](LICENSE).
 
 ## Changelog
 

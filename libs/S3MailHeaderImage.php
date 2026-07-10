@@ -23,14 +23,6 @@ class MailHeaderImage extends \humhub\modules\humhubs3\libs\core\MailHeaderImage
     {
         S3MediaStorage::delete(self::STORE_PATH);
 
-        foreach ([self::getLegacyAssetPath(), S3MediaStorage::getLegacyPath('mail-header/header.png')] as $file)
-        {
-            if (is_file($file))
-            {
-                @unlink($file);
-            }
-        }
-
         if ($fileName === null || $fileName === '')
         {
             return;
@@ -46,10 +38,10 @@ class MailHeaderImage extends \humhub\modules\humhubs3\libs\core\MailHeaderImage
             $image->resize($image->getSize()->heighten(self::MAX_HEIGHT));
         }
 
-        $cachePath = S3MediaStorage::resolveLocalPath(self::STORE_PATH, false);
-        FileHelper::createDirectory(dirname($cachePath), 0o755, true);
-        $image->save($cachePath);
-        S3MediaStorage::putFile(self::STORE_PATH, $cachePath);
+        $processPath = S3MediaStorage::resolveProcessingPath(self::STORE_PATH, false);
+        FileHelper::createDirectory(dirname($processPath), 0o755, true);
+        $image->save($processPath);
+        S3MediaStorage::putFile(self::STORE_PATH, $processPath);
     }
 
     /**
@@ -62,7 +54,7 @@ class MailHeaderImage extends \humhub\modules\humhubs3\libs\core\MailHeaderImage
             return null;
         }
 
-        return S3MediaStorage::buildProxyUrl(['path' => self::STORE_PATH]);
+        return S3MediaStorage::getPublicUrl(self::STORE_PATH);
     }
 
     /**
@@ -70,8 +62,7 @@ class MailHeaderImage extends \humhub\modules\humhubs3\libs\core\MailHeaderImage
      */
     public static function hasImage(): bool
     {
-        return S3MediaStorage::has(self::STORE_PATH)
-            || is_file(S3MediaStorage::getLegacyPath('mail-header/header.png'));
+        return S3MediaStorage::has(self::STORE_PATH);
     }
 
     /**
@@ -111,10 +102,5 @@ class MailHeaderImage extends \humhub\modules\humhubs3\libs\core\MailHeaderImage
             'verticalMargin' => $this->verticalMargin,
             'backgroundColor' => $this->backgroundColor,
         ]);
-    }
-
-    private static function getLegacyAssetPath(): string
-    {
-        return Yii::getAlias(Yii::$app->assetManager->basePath) . DIRECTORY_SEPARATOR . 'mail-header' . DIRECTORY_SEPARATOR . 'header.png';
     }
 }

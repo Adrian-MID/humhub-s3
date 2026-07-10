@@ -5,6 +5,7 @@ namespace humhub\modules\humhubs3;
 use humhub\components\Module as BaseModule;
 use humhub\modules\file\components\StorageManager;
 use humhub\modules\humhubs3\components\S3StorageManager;
+use humhub\modules\humhubs3\controllers\FileController;
 use humhub\modules\humhubs3\models\forms\ConfigureForm;
 use Yii;
 use yii\helpers\Url;
@@ -12,19 +13,22 @@ use yii\helpers\Url;
 class Module extends BaseModule
 {
     /**
-     * Maps HumHub media classes to S3-backed override files.
+     * Maps HumHub classes to S3-backed override files.
      *
      * Yii class maps must point to file paths, not replacement class names.
      *
      * @var array<string, string>
      */
     private const MEDIA_CLASS_MAP = [
-        'humhub\libs\ProfileImage' => '@humhub/modules/humhubs3/libs/S3ProfileImage.php',
-        'humhub\libs\ProfileBannerImage' => '@humhub/modules/humhubs3/libs/S3ProfileBannerImage.php',
-        'humhub\libs\LogoImage' => '@humhub/modules/humhubs3/libs/S3LogoImage.php',
-        'humhub\modules\web\pwa\widgets\SiteIcon' => '@humhub/modules/humhubs3/libs/S3SiteIcon.php',
-        'humhub\modules\user\helpers\LoginBackgroundImageHelper' => '@humhub/modules/humhubs3/libs/S3LoginBackgroundImageHelper.php',
-        'humhub\widgets\mails\MailHeaderImage' => '@humhub/modules/humhubs3/libs/S3MailHeaderImage.php',
+        'humhub\libs\ProfileImage' => '@humhub-s3/libs/S3ProfileImage.php',
+        'humhub\libs\ProfileBannerImage' => '@humhub-s3/libs/S3ProfileBannerImage.php',
+        'humhub\libs\LogoImage' => '@humhub-s3/libs/S3LogoImage.php',
+        'humhub\modules\web\pwa\widgets\SiteIcon' => '@humhub-s3/libs/S3SiteIcon.php',
+        'humhub\modules\user\helpers\LoginBackgroundImageHelper' => '@humhub-s3/libs/S3LoginBackgroundImageHelper.php',
+        'humhub\widgets\mails\MailHeaderImage' => '@humhub-s3/libs/S3MailHeaderImage.php',
+        'humhub\modules\file\models\File' => '@humhub-s3/libs/S3File.php',
+        'humhub\modules\content\widgets\richtext\converter\RichTextToEmailHtmlConverter' => '@humhub-s3/libs/S3RichTextToEmailHtmlConverter.php',
+        'humhub\modules\content\widgets\richtext\extensions\file\FileExtension' => '@humhub-s3/libs/S3FileExtension.php',
     ];
 
     /**
@@ -90,6 +94,27 @@ class Module extends BaseModule
         {
             Yii::$classMap[$class] = $path;
         }
+    }
+
+    /**
+     * Swaps HumHub's file download controller for presigned S3 redirects when storage is active.
+     */
+    public static function applyFileControllerMap(): void
+    {
+        $fileModule = Yii::$app->getModule('file');
+        if (!$fileModule instanceof \humhub\modules\file\Module)
+        {
+            return;
+        }
+
+        if (ConfigureForm::isActive())
+        {
+            $fileModule->controllerMap['file'] = FileController::class;
+
+            return;
+        }
+
+        unset($fileModule->controllerMap['file']);
     }
 
     /**

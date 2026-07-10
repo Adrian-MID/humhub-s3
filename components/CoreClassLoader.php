@@ -15,6 +15,9 @@ class CoreClassLoader
     /** @var array<string, true> */
     private static array $loaded = [];
 
+    /** @var array<string, true> */
+    private static array $loading = [];
+
     public static function requireCore(string $coreClassFqn): void
     {
         $baseFqn = self::toBaseFqn($coreClassFqn);
@@ -25,34 +28,168 @@ class CoreClassLoader
             return;
         }
 
-        $alias = '@' . str_replace('\\', '/', ltrim($coreClassFqn, '\\')) . '.php';
-        $path = Yii::getAlias($alias, false);
-        if (!is_string($path) || !is_file($path))
+        if (isset(self::$loading[$baseFqn]))
         {
-            throw new RuntimeException('Core class file not found: ' . $coreClassFqn);
+            return;
         }
 
-        $code = file_get_contents($path);
-        if ($code === false)
+        self::$loading[$baseFqn] = true;
+
+        try
         {
-            throw new RuntimeException('Cannot read core class file: ' . $path);
+            $alias = '@' . str_replace('\\', '/', ltrim($coreClassFqn, '\\')) . '.php';
+            $path = Yii::getAlias($alias, false);
+            if (!is_string($path) || !is_file($path))
+            {
+                throw new RuntimeException('Core class file not found: ' . $coreClassFqn);
+            }
+
+            $code = file_get_contents($path);
+            if ($code === false)
+            {
+                throw new RuntimeException('Cannot read core class file: ' . $path);
+            }
+
+            $originalNamespace = self::extractNamespace($code);
+            if ($originalNamespace !== null)
+            {
+                self::requireDependentCoreClasses($code, $originalNamespace);
+            }
+
+            $code = preg_replace(
+                '/^namespace\s+[^;]+;/m',
+                'namespace ' . self::BASE_NAMESPACE . ';',
+                $code,
+                1
+            );
+
+            if ($code === null)
+            {
+                throw new RuntimeException('Unable to prepare core class: ' . $coreClassFqn);
+            }
+
+            eval('?>' . $code);
+
+            self::$loaded[$baseFqn] = true;
+        }
+        finally
+        {
+            unset(self::$loading[$baseFqn]);
+        }
+    }
+
+    private static function extractNamespace(string $code): ?string
+    {
+        if (preg_match('/^namespace\s+([^;]+);/m', $code, $matches) !== 1)
+        {
+            return null;
         }
 
-        $code = preg_replace(
-            '/^namespace\s+[^;]+;/m',
-            'namespace ' . self::BASE_NAMESPACE . ';',
-            $code,
-            1
-        );
+        return trim($matches[1]);
+    }
 
-        if ($code === null)
+    private static function requireDependentCoreClasses(string $code, string $originalNamespace): void
+    {
+        self::requireParentCoreClass($code, $originalNamespace);
+
+        $references = [];
+        if (preg_match_all('/\b([A-Z][A-Za-z0-9_]*)::/m', $code, $matches) !== false)
         {
-            throw new RuntimeException('Unable to prepare core class: ' . $coreClassFqn);
+            foreach ($matches[1] as $reference)
+            {
+                $references[] = $reference;
+            }
         }
 
-        eval('?>' . $code);
+        if (preg_match_all('/\bnew ([A-Z][A-Za-z0-9_]*)\b/m', $code, $matches) !== false)
+        {
+            foreach ($matches[1] as $reference)
+            {
+                $references[] = $reference;
+            }
+        }
 
-        self::$loaded[$baseFqn] = true;
+        foreach (array_unique($references) as $reference)
+        {
+            if (in_array($reference, ['self', 'parent', 'static'], true))
+            {
+                continue;
+            }
+
+            $classFqn = self::resolveClassReference($code, $reference, $originalNamespace);
+            if (!str_starts_with($classFqn, $originalNamespace . '\\'))
+            {
+                continue;
+            }
+
+            self::requireCore($classFqn);
+        }
+    }
+
+    private static function requireParentCoreClass(string $code, string $originalNamespace): void
+    {
+        if (preg_match('/class\s+\w+\s+extends\s+([^\s{]+)/', $code, $matches) !== 1)
+        {
+            return;
+        }
+
+        $parentClass = self::resolveClassReference($code, $matches[1], $originalNamespace);
+        if (!str_starts_with($parentClass, $originalNamespace . '\\'))
+        {
+            return;
+        }
+
+        self::requireCore($parentClass);
+    }
+
+    private static function resolveClassReference(string $code, string $reference, string $originalNamespace): string
+    {
+        $reference = ltrim($reference, '\\');
+        if (str_contains($reference, '\\'))
+        {
+            return $reference;
+        }
+
+        $imports = self::extractUseImports($code);
+        if (isset($imports[$reference]))
+        {
+            return $imports[$reference];
+        }
+
+        return $originalNamespace . '\\' . $reference;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function extractUseImports(string $code): array
+    {
+        $imports = [];
+
+        if (preg_match_all('/^use\s+([^;]+);/m', $code, $matches) !== false)
+        {
+            foreach ($matches[1] as $statement)
+            {
+                $statement = trim($statement);
+                if ($statement === '')
+                {
+                    continue;
+                }
+
+                if (str_contains($statement, ' as '))
+                {
+                    [$fqn, $alias] = array_map('trim', explode(' as ', $statement, 2));
+                    $imports[$alias] = ltrim($fqn, '\\');
+                    continue;
+                }
+
+                $fqn = ltrim($statement, '\\');
+                $parts = explode('\\', $fqn);
+                $imports[end($parts)] = $fqn;
+            }
+        }
+
+        return $imports;
     }
 
     public static function baseClass(string $coreClassFqn): string

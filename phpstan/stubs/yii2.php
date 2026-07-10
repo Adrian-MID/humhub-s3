@@ -22,6 +22,17 @@ class Component extends BaseObject
 {
 }
 
+class Action extends Component
+{
+    public function init(): void
+    {
+    }
+
+    public function run()
+    {
+    }
+}
+
 class Module extends Component
 {
     public string $id = '';
@@ -227,6 +238,13 @@ class Response
     public function sendFile(string $filePath, string $attachmentName = '', array $options = []): self
     {
     }
+
+    /**
+     * @return $this
+     */
+    public function redirect(string $url, int $statusCode = 302): self
+    {
+    }
 }
 
 class Request
@@ -251,6 +269,10 @@ class Request
 
 class User extends \yii\base\Component
 {
+    public bool $isGuest = true;
+
+    public int $id = 0;
+
     public function can(string $permission): bool
     {
     }
@@ -278,6 +300,9 @@ class View extends \yii\base\Component
 
 class HttpException extends \Exception
 {
+    public function __construct(int $status, ?string $message = null, int $code = 0, ?\Throwable $previous = null)
+    {
+    }
 }
 
 class NotFoundHttpException extends HttpException
@@ -294,6 +319,13 @@ namespace yii\db;
 
 class ActiveRecord extends \yii\base\BaseObject
 {
+    /**
+     * @param array<string, mixed> $condition
+     * @return static|null
+     */
+    public static function findOne($condition)
+    {
+    }
 }
 
 namespace yii\helpers;

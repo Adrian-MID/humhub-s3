@@ -5,6 +5,7 @@ namespace humhub\modules\humhubs3\components;
 use AsyncAws\Core\Exception\Http\ClientException;
 use AsyncAws\Core\Exception\Http\HttpException;
 use AsyncAws\S3\Exception\NoSuchKeyException;
+use AsyncAws\S3\Input\GetObjectRequest;
 use AsyncAws\S3\S3Client as AsyncS3Client;
 use AsyncAws\S3\ValueObject\AwsObject;
 use humhub\modules\humhubs3\ComposerAutoload;
@@ -19,6 +20,12 @@ class S3Client
 {
     private string $bucket;
 
+    private string $region;
+
+    private ?string $endpoint;
+
+    private bool $usePathStyle;
+
     private AsyncS3Client $client;
 
     public function __construct(
@@ -32,6 +39,9 @@ class S3Client
         ComposerAutoload::ensureLoaded();
 
         $this->bucket = $bucket;
+        $this->region = $region;
+        $this->endpoint = ($endpoint !== null && $endpoint !== '') ? rtrim($endpoint, '/') : null;
+        $this->usePathStyle = $usePathStyle;
 
         $configuration = [
             'region' => $region,
@@ -40,9 +50,9 @@ class S3Client
             'pathStyleEndpoint' => $usePathStyle ? 'true' : 'false',
         ];
 
-        if ($endpoint !== null && $endpoint !== '')
+        if ($this->endpoint !== null)
         {
-            $configuration['endpoint'] = rtrim($endpoint, '/');
+            $configuration['endpoint'] = $this->endpoint;
         }
 
         $this->client = new AsyncS3Client(
@@ -139,6 +149,60 @@ class S3Client
         }
     }
 
+    public function getPublicObjectUrl(string $key): string
+    {
+        $encodedKey = self::encodeObjectKey($key);
+
+        if ($this->endpoint !== null)
+        {
+            if ($this->usePathStyle)
+            {
+                return $this->endpoint . '/' . rawurlencode($this->bucket) . '/' . $encodedKey;
+            }
+
+            return $this->endpoint . '/' . $encodedKey;
+        }
+
+        if ($this->usePathStyle)
+        {
+            $host = $this->region === 'us-east-1'
+                ? 's3.amazonaws.com'
+                : 's3.' . $this->region . '.amazonaws.com';
+
+            return 'https://' . $host . '/' . rawurlencode($this->bucket) . '/' . $encodedKey;
+        }
+
+        $host = $this->region === 'us-east-1'
+            ? $this->bucket . '.s3.amazonaws.com'
+            : $this->bucket . '.s3.' . $this->region . '.amazonaws.com';
+
+        return 'https://' . $host . '/' . $encodedKey;
+    }
+
+    public function presignGet(string $key, \DateTimeImmutable $expires, ?string $responseContentDisposition = null): string
+    {
+        $params = [
+            'Bucket' => $this->bucket,
+            'Key' => $key,
+        ];
+
+        if ($responseContentDisposition !== null && $responseContentDisposition !== '')
+        {
+            $params['ResponseContentDisposition'] = $responseContentDisposition;
+        }
+
+        try
+        {
+            $input = new GetObjectRequest($params);
+
+            return $this->client->presign($input, $expires);
+        }
+        catch (\Throwable $exception)
+        {
+            throw self::rethrow($exception);
+        }
+    }
+
     public function headObject(string $key): bool
     {
         try
@@ -185,8 +249,46 @@ class S3Client
                         return false;
                     }
 
+                    if ($getException->getCode() === 403)
+                    {
+                        return false;
+                    }
+
                     throw self::rethrow($getException);
                 }
+            }
+
+            throw self::rethrow($exception);
+        }
+        catch (\Throwable $exception)
+        {
+            throw self::rethrow($exception);
+        }
+    }
+
+    public function getObjectLastModified(string $key): ?int
+    {
+        try
+        {
+            $result = $this->client->headObject([
+                'Bucket' => $this->bucket,
+                'Key' => $key,
+            ]);
+            $result->resolve();
+
+            $lastModified = $result->getLastModified();
+
+            return $lastModified?->getTimestamp();
+        }
+        catch (NoSuchKeyException)
+        {
+            return null;
+        }
+        catch (ClientException $exception)
+        {
+            if (in_array($exception->getCode(), [403, 404], true))
+            {
+                return null;
             }
 
             throw self::rethrow($exception);
@@ -210,6 +312,11 @@ class S3Client
         {
             throw self::rethrow($exception);
         }
+    }
+
+    public static function shouldValidateSslForHttpClient(): bool
+    {
+        return self::shouldValidateSsl();
     }
 
     /**
@@ -250,11 +357,13 @@ class S3Client
     /**
      * Uploads a test object, verifies it, and removes it again.
      *
+     * @param string|null $objectKeyPrefix Optional bucket prefix (e.g. configured HumHub object prefix).
      * @return array{success: bool, message: string}
      */
-    public function testConnection(): array
+    public function testConnection(?string $objectKeyPrefix = null): array
     {
-        $testKey = 'humhub-s3-test-' . bin2hex(random_bytes(8)) . '.txt';
+        $prefix = ($objectKeyPrefix !== null && $objectKeyPrefix !== '') ? rtrim($objectKeyPrefix, '/') . '/' : '';
+        $testKey = $prefix . 'branding/humhub-s3-connection-test-' . bin2hex(random_bytes(8)) . '.txt';
         $testContent = 'HumHub S3 connection test at ' . gmdate('c');
 
         $tempFilePath = tempnam(sys_get_temp_dir(), 's3test_');
@@ -350,6 +459,13 @@ class S3Client
                 // Ignore cleanup errors.
             }
         }
+    }
+
+    private static function encodeObjectKey(string $key): string
+    {
+        $segments = explode('/', ltrim($key, '/'));
+
+        return implode('/', array_map(static fn(string $segment): string => rawurlencode($segment), $segments));
     }
 
     private static function shouldValidateSsl(): bool

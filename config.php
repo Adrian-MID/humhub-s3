@@ -1,5 +1,16 @@
 <?php
 
+// HumHub validates event callbacks while loading config.php, before the module instance
+// boots. Ensure module classes are autoloadable at that point.
+foreach ([__DIR__ . '/../vendor/autoload.php', __DIR__ . '/vendor/autoload.php'] as $autoloadFile)
+{
+    if (is_file($autoloadFile))
+    {
+        require_once $autoloadFile;
+        break;
+    }
+}
+
 /** @noinspection MissedFieldInspection */
 return [
     'id' => 'humhub-s3',

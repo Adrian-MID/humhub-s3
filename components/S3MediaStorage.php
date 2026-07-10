@@ -11,12 +11,12 @@ use Yii;
 /**
  * S3-backed storage for HumHub media outside the File module (profile images, branding).
  *
- * Objects are stored under the configured bucket prefix. A runtime cache holds local
- * copies for Imagine processing and streaming; S3 remains the durable store.
+ * Objects are stored in S3. Local files under the process directory are temporary and
+ * used only while uploading or transforming images.
  */
 class S3MediaStorage
 {
-    private const CACHE_ROOT = '@runtime/humhub-s3/media';
+    private const PROCESS_ROOT = '@runtime/humhub-s3/process';
 
     private static ?S3Client $client = null;
 
@@ -33,55 +33,44 @@ class S3MediaStorage
         return $relativePath;
     }
 
-    public static function getCachePath(string $relativePath): string
+    public static function getPublicUrl(string $relativePath, bool $withVersion = false): string
     {
-        $relativePath = ltrim(str_replace('\\', '/', $relativePath), '/');
+        $url = self::getClient()->getPublicObjectUrl(self::buildObjectKey($relativePath));
 
-        return self::resolveAlias(self::CACHE_ROOT . '/' . $relativePath);
+        if (!$withVersion)
+        {
+            return $url;
+        }
+
+        return self::appendVersionQuery($url, $relativePath);
     }
 
     /**
-     * Returns a local path for reading or writing, fetching from S3 or legacy uploads on demand.
+     * Returns a local path for processing (Imagine, uploads). Downloads from S3 when needed.
      */
-    public static function resolveLocalPath(string $relativePath, bool $downloadRemote = true): string
+    public static function resolveProcessingPath(string $relativePath, bool $downloadRemote = true): string
     {
-        $cachePath = self::getCachePath($relativePath);
-        FileHelper::createDirectory(dirname($cachePath), 0o755, true);
+        $processPath = self::getProcessPath($relativePath);
+        FileHelper::createDirectory(dirname($processPath), 0o755, true);
 
-        if (is_file($cachePath))
+        if (is_file($processPath))
         {
-            return $cachePath;
+            return $processPath;
         }
 
         if ($downloadRemote && self::hasRemote($relativePath))
         {
-            self::downloadToCache($relativePath);
+            self::downloadToProcessPath($relativePath);
 
-            return $cachePath;
+            return $processPath;
         }
 
-        $legacyPath = self::getLegacyPath($relativePath);
-        if (is_file($legacyPath))
-        {
-            return $legacyPath;
-        }
-
-        return $cachePath;
+        return $processPath;
     }
 
     public static function has(string $relativePath): bool
     {
-        if (is_file(self::getCachePath($relativePath)))
-        {
-            return true;
-        }
-
-        if (self::hasRemote($relativePath))
-        {
-            return true;
-        }
-
-        return is_file(self::getLegacyPath($relativePath));
+        return self::hasRemote($relativePath);
     }
 
     public static function putFile(string $relativePath, string $localPath): void
@@ -108,15 +97,15 @@ class S3MediaStorage
                 $exception
             );
         }
+        finally
+        {
+            self::cleanupLocalPath($localPath, $relativePath);
+        }
     }
 
     public static function delete(string $relativePath): void
     {
-        $cachePath = self::getCachePath($relativePath);
-        if (is_file($cachePath))
-        {
-            @unlink($cachePath);
-        }
+        self::cleanupProcessingPath($relativePath);
 
         try
         {
@@ -143,10 +132,10 @@ class S3MediaStorage
             $except
         );
 
-        $cacheDir = self::getCachePath($relativePrefix);
-        if (is_dir($cacheDir))
+        $processDir = self::getProcessPath($relativePrefix);
+        if (is_dir($processDir))
         {
-            FileHelper::removeDirectory($cacheDir);
+            FileHelper::removeDirectory($processDir);
         }
 
         $objectPrefix = self::buildObjectKey($relativePrefix);
@@ -176,46 +165,56 @@ class S3MediaStorage
 
     public static function getLastModified(string $relativePath): ?int
     {
-        $cachePath = self::getCachePath($relativePath);
-        if (is_file($cachePath))
+        try
         {
-            $mtime = filemtime($cachePath);
-
-            return $mtime !== false ? $mtime : null;
+            return self::getClient()->getObjectLastModified(self::buildObjectKey($relativePath));
         }
-
-        if (is_file(self::getLegacyPath($relativePath)))
+        catch (\Throwable $exception)
         {
-            $mtime = filemtime(self::getLegacyPath($relativePath));
+            if ($exception instanceof S3Exception)
+            {
+                Yii::warning('Unable to read S3 media last-modified: ' . $exception->getMessage(), 'humhub-s3');
+            }
 
-            return $mtime !== false ? $mtime : null;
+            return null;
         }
-
-        return null;
     }
 
     /**
-     * @param array<string, scalar|null> $params
+     * Appends ?v= for cache busting. HumHub JS appends &c= after upload; the base URL must
+     * already contain a query string or that suffix is parsed as part of the object key.
      */
-    public static function buildProxyUrl(array $params, bool $scheme = false): string
+    public static function appendVersionQuery(string $url, string $relativePath): string
     {
-        $version = null;
-        if (isset($params['path']) && is_string($params['path']))
-        {
-            $version = self::getLastModified($params['path']);
-        }
+        $version = self::getLastModified($relativePath) ?? time();
+        $separator = str_contains($url, '?') ? '&' : '?';
 
-        if ($version !== null)
-        {
-            $params['v'] = $version;
-        }
-
-        return MediaProxyRoute::buildUrl($params, $scheme);
+        return $url . $separator . 'v=' . $version;
     }
 
-    public static function getLegacyPath(string $relativePath): string
+    public static function cleanupProcessingPath(string $relativePath): void
     {
-        return self::resolveAlias('@webroot/uploads/' . ltrim(str_replace('\\', '/', $relativePath), '/'));
+        $processPath = self::getProcessPath($relativePath);
+        if (is_file($processPath))
+        {
+            TempFileHelper::delete($processPath);
+        }
+    }
+
+    public static function getProcessPath(string $relativePath): string
+    {
+        $relativePath = ltrim(str_replace('\\', '/', $relativePath), '/');
+
+        return self::resolveAlias(self::PROCESS_ROOT . '/' . $relativePath);
+    }
+
+    private static function cleanupLocalPath(string $localPath, string $relativePath): void
+    {
+        $processPath = self::getProcessPath($relativePath);
+        if ($localPath === $processPath || str_starts_with($localPath, sys_get_temp_dir()))
+        {
+            TempFileHelper::delete($localPath);
+        }
     }
 
     private static function resolveAlias(string $alias): string
@@ -235,28 +234,32 @@ class S3MediaStorage
         {
             return self::getClient()->headObject(self::buildObjectKey($relativePath));
         }
-        catch (S3Exception $exception)
+        catch (\Throwable $exception)
         {
-            Yii::warning('Unable to check S3 media object: ' . $exception->getMessage(), 'humhub-s3');
+            if ($exception instanceof S3Exception)
+            {
+                Yii::warning('Unable to check S3 media object: ' . $exception->getMessage(), 'humhub-s3');
+            }
 
             return false;
         }
     }
 
-    private static function downloadToCache(string $relativePath): void
+    private static function downloadToProcessPath(string $relativePath): void
     {
-        $cachePath = self::getCachePath($relativePath);
-        FileHelper::createDirectory(dirname($cachePath), 0o755, true);
+        $processPath = self::getProcessPath($relativePath);
+        FileHelper::createDirectory(dirname($processPath), 0o755, true);
 
         try
         {
-            self::getClient()->getObject(self::buildObjectKey($relativePath), $cachePath);
+            self::getClient()->getObject(self::buildObjectKey($relativePath), $processPath);
+            TempFileHelper::track($processPath);
         }
         catch (S3Exception $exception)
         {
-            if (is_file($cachePath))
+            if (is_file($processPath))
             {
-                @unlink($cachePath);
+                TempFileHelper::delete($processPath);
             }
 
             Yii::error('Unable to download media from S3: ' . $exception->getMessage(), 'humhub-s3');
@@ -267,7 +270,7 @@ class S3MediaStorage
             );
         }
 
-        @chmod($cachePath, 0o644);
+        @chmod($processPath, 0o644);
     }
 
     private static function getClient(): S3Client

@@ -151,3 +151,55 @@ class MailHeaderImage extends Widget
     {
     }
 }
+
+class File extends \yii\db\ActiveRecord
+{
+    public string $guid = '';
+
+    public string $file_name = '';
+
+    public string $object_model = '';
+
+    public int $created_by = 0;
+
+    /**
+     * @param \humhub\modules\user\models\User|null $user
+     */
+    public function canView($user = null): bool
+    {
+    }
+
+    public function getStore(): \humhub\modules\file\components\StorageManagerInterface
+    {
+    }
+
+    /**
+     * @param array<string, mixed>|string $params
+     * @param bool $absolute
+     */
+    public function getUrl($params = [], $absolute = true): string
+    {
+    }
+}
+
+class RichTextToEmailHtmlConverter
+{
+    /**
+     * @param object $linkBlock
+     * @return object
+     */
+    protected function tokenizeBlock($linkBlock)
+    {
+    }
+}
+
+class FileExtension
+{
+    public static function replaceLinkExtension(?string $text, ?string $extension, callable $callback): string
+    {
+    }
+
+    public function onBeforeOutput(\humhub\modules\content\widgets\richtext\ProsemirrorRichText $richtext, string $output): string
+    {
+    }
+}
