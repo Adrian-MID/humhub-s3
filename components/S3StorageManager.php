@@ -12,18 +12,15 @@ use yii\helpers\ArrayHelper;
 use yii\web\UploadedFile;
 
 /**
- * HumHub file storage backed by S3, with a local runtime cache for compatibility.
+ * HumHub file storage backed by S3, with temporary local files for processing only.
  *
- * HumHub's file module talks only to StorageManager — uploads, downloads,
- * thumbnails, and deletes all go through the same methods. This class extends the
- * default local manager: writes still land in the runtime cache first, then sync
- * to S3. Reads prefer the cache and pull from S3 on demand.
+ * Uploads and metadata operations may materialize bytes locally for a single request.
+ * Authorized downloads redirect to presigned S3 URLs instead of streaming from disk.
  */
 class S3StorageManager extends StorageManager
 {
     /**
-     * Local runtime cache. HumHub expects real filesystem paths (sendFile, GD, etc.),
-     * so objects are materialized here even though S3 is the durable store.
+     * Local workspace for uploads and image processing within the current request.
      *
      * @var string
      */
@@ -31,42 +28,62 @@ class S3StorageManager extends StorageManager
 
     private ?S3Client $client = null;
 
+    /** @var array<string, true> */
+    private array $uploadedVariants = [];
+
     /**
-     * Checks whether a file (or variant such as a thumbnail) exists.
-     *
-     * Used before HumHub replaces file content, after a successful store, and when
-     * building download URLs that include a content hash. Checks the local cache
-     * first, then S3 if the cache is cold.
-     *
      * @param string|null $variant
      * @inheritdoc
      */
     public function has($variant = null): bool
     {
-        if (parent::has($variant))
+        if ($this->wasUploadedThisRequest($variant))
         {
             return true;
         }
 
-        try
+        if ($this->remoteHas($variant))
         {
-            return $this->getClient()->headObject($this->getObjectKey($variant));
+            return true;
         }
-        catch (S3Exception $exception)
-        {
-            Yii::warning('Unable to check S3 object: ' . $exception->getMessage(), 'humhub-s3');
-            return false;
-        }
+
+        return is_file(parent::get($variant));
     }
 
     /**
-     * Returns the local path HumHub uses to read a file.
+     * Returns the local processing path without downloading from S3.
+     */
+    public function getStoragePath(?string $variant = null): string
+    {
+        return parent::get($variant);
+    }
+
+    /**
+     * Ensures a variant exists in S3, uploading from the local processing workspace when needed.
      *
-     * Called when a user downloads or previews an attachment, when HumHub computes
-     * size or SHA-1 metadata, and when image conversion reads the source bytes.
-     * HumHub always works with filesystem paths, so if the object is not cached yet
-     * it is downloaded from S3 first via downloadToLocal().
-     *
+     * HumHub converters (e.g. preview-image) write variants directly to disk without calling set().
+     */
+    public function ensureRemoteVariant(?string $variant = null): bool
+    {
+        if ($this->remoteHas($variant))
+        {
+            return true;
+        }
+
+        S3FileVariantMaterializer::materialize($this->file, $this, $variant);
+
+        $localPath = $this->getStoragePath($variant);
+        if (!is_file($localPath))
+        {
+            return false;
+        }
+
+        $this->uploadFromLocal($variant);
+
+        return $this->remoteHas($variant);
+    }
+
+    /**
      * @param string|null $variant
      * @return string
      * @inheritdoc
@@ -79,9 +96,10 @@ class S3StorageManager extends StorageManager
         {
             try
             {
-                if ($this->getClient()->headObject($this->getObjectKey($variant)))
+                if ($this->remoteHas($variant))
                 {
                     $this->downloadToLocal($variant);
+                    TempFileHelper::track($localPath);
                 }
             }
             catch (S3Exception $exception)
@@ -99,19 +117,13 @@ class S3StorageManager extends StorageManager
     }
 
     /**
-     * Lists generated variants (thumbnails, previews, etc.) for this file.
-     *
-     * Used when a download request includes a variant parameter — HumHub checks that
-     * the variant exists before serving it. Merges local cache entries with keys
-     * found in S3 so variants remain discoverable after cache eviction.
-     *
      * @param string[] $except
      * @return string[]
      * @inheritdoc
      */
     public function getVariants($except = []): array
     {
-        $variants = parent::getVariants($except);
+        $variants = [];
         $prefix = $this->getObjectPrefix() . '/';
 
         try
@@ -141,27 +153,33 @@ class S3StorageManager extends StorageManager
     }
 
     /**
-     * Stores an uploaded file from the browser.
-     *
-     * Triggered by the file upload widget and attachment flows (posts, comments,
-     * profile images, etc.) when HumHub stores an UploadedFile. Writes to the local
-     * cache, then pushes to S3; rolls back the cache file if the upload fails.
-     *
      * @param string|null $variant
      * @inheritdoc
      */
     public function set(UploadedFile $file, $variant = null): void
     {
         parent::set($file, $variant);
+
+        $localPath = parent::get($variant);
+        if (!is_file($localPath) && is_readable($file->tempName))
+        {
+            FileHelper::createDirectory(dirname($localPath), $this->fileMode, true);
+            if (is_uploaded_file($file->tempName))
+            {
+                move_uploaded_file($file->tempName, $localPath);
+            }
+            else
+            {
+                copy($file->tempName, $localPath);
+            }
+
+            @chmod($localPath, $this->fileMode);
+        }
+
         $this->uploadFromLocal($variant);
     }
 
     /**
-     * Stores raw string content as a file.
-     *
-     * Used when HumHub saves generated or programmatic content (exports, rendered
-     * assets, etc.). Same write-through to S3 as set().
-     *
      * @param string $content
      * @param string|null $variant
      * @inheritdoc
@@ -173,11 +191,6 @@ class S3StorageManager extends StorageManager
     }
 
     /**
-     * Stores a file by copying from an existing path on disk.
-     *
-     * Used when HumHub copies an already-stored file into another record, or when
-     * importing from a temp path. Same write-through to S3 as set().
-     *
      * @param string|null $variant
      * @inheritdoc
      */
@@ -188,15 +201,8 @@ class S3StorageManager extends StorageManager
     }
 
     /**
-     * Removes file bytes from S3 and the local cache.
-     *
-     * Called when a file record is deleted, when unused files are cleaned up by the
-     * daily cron job, and when file content is replaced (old variants are cleared
-     * first, optionally keeping history entries). Remote objects are removed before
-     * the local cache so S3 does not retain orphaned data.
-     *
      * @param string|null $variant
-     * @param string[] $except variant names to keep (e.g. file-history snapshots)
+     * @param string[] $except
      * @inheritdoc
      */
     public function delete($variant = null, $except = []): void
@@ -213,6 +219,34 @@ class S3StorageManager extends StorageManager
         parent::delete($variant, $except);
     }
 
+    public function remoteHas(?string $variant = null): bool
+    {
+        try
+        {
+            return $this->getClient()->headObject($this->getObjectKey($variant));
+        }
+        catch (\Throwable $exception)
+        {
+            if ($exception instanceof S3Exception)
+            {
+                Yii::warning('Unable to check S3 object: ' . $exception->getMessage(), 'humhub-s3');
+            }
+
+            return false;
+        }
+    }
+
+    public function createPresignedDownloadUrl(?string $variant, ?string $responseContentDisposition): string
+    {
+        $expires = new \DateTimeImmutable('+' . ConfigureForm::getPresignedUrlTtl() . ' seconds');
+
+        return $this->getClient()->presignGet(
+            $this->getObjectKey($variant),
+            $expires,
+            $responseContentDisposition
+        );
+    }
+
     private function getClient(): S3Client
     {
         if ($this->client === null)
@@ -224,11 +258,6 @@ class S3StorageManager extends StorageManager
         return $this->client;
     }
 
-    /**
-     * Builds the S3 key prefix for this HumHub file (bucket folder + sharded GUID path).
-     *
-     * Each file's variants share one prefix, e.g. "humhub/a/3/{guid}/".
-     */
     private function getObjectPrefix(): string
     {
         $settings = ConfigureForm::getSettings();
@@ -244,9 +273,6 @@ class S3StorageManager extends StorageManager
         return $path;
     }
 
-    /**
-     * Full S3 object key for a variant (defaults to the original "file" variant).
-     */
     private function getObjectKey(?string $variant = null): string
     {
         if ($variant === null)
@@ -257,13 +283,6 @@ class S3StorageManager extends StorageManager
         return $this->getObjectPrefix() . '/' . $variant;
     }
 
-    /**
-     * Pushes a freshly cached local file to S3 after HumHub finishes a write.
-     *
-     * HumHub always writes locally first; this is the second step that makes the
-     * upload durable. On failure the local copy is removed so HumHub does not think
-     * the file exists when S3 does not have it.
-     */
     private function uploadFromLocal(?string $variant = null): void
     {
         $localPath = parent::get($variant);
@@ -279,10 +298,11 @@ class S3StorageManager extends StorageManager
                 $localPath,
                 FileHelper::getMimeType($localPath) ?: 'application/octet-stream'
             );
+            $this->markUploaded($variant);
         }
         catch (S3Exception $exception)
         {
-            @unlink($localPath);
+            TempFileHelper::delete($localPath);
             Yii::error('S3 upload failed: ' . $exception->getMessage(), 'humhub-s3');
             throw new RuntimeException(
                 Yii::t('HumhubS3Module.base', 'Failed to upload file to S3 storage. Please try again or contact an administrator.'),
@@ -290,15 +310,32 @@ class S3StorageManager extends StorageManager
                 $exception
             );
         }
+        finally
+        {
+            TempFileHelper::delete($localPath);
+        }
     }
 
-    /**
-     * Pulls an object from S3 into the runtime cache on first read.
-     *
-     * HumHub cannot stream directly from S3 — downloads, previews, and image tools
-     * need a local path. Invoked from get() when the cache is empty but the object
-     * but the object exists remotely (e.g. after a server restart or on another node).
-     */
+    private function markUploaded(?string $variant): void
+    {
+        $this->uploadedVariants[$this->normalizeVariantKey($variant)] = true;
+    }
+
+    private function wasUploadedThisRequest(?string $variant): bool
+    {
+        return isset($this->uploadedVariants[$this->normalizeVariantKey($variant)]);
+    }
+
+    private function normalizeVariantKey(?string $variant): string
+    {
+        if ($variant === null || $variant === '')
+        {
+            return $this->originalFileName;
+        }
+
+        return $variant;
+    }
+
     private function downloadToLocal(?string $variant = null): void
     {
         $localPath = parent::get($variant);
@@ -310,10 +347,7 @@ class S3StorageManager extends StorageManager
         }
         catch (S3Exception $exception)
         {
-            if (is_file($localPath))
-            {
-                @unlink($localPath);
-            }
+            TempFileHelper::delete($localPath);
             throw $exception;
         }
 
@@ -321,10 +355,6 @@ class S3StorageManager extends StorageManager
     }
 
     /**
-     * Deletes all S3 objects under this file's prefix except those listed in $except.
-     *
-     * Used when HumHub deletes an entire attachment or replaces its content.
-     *
      * @param string[] $except
      */
     private function deleteAllRemoteVariants(array $except = []): void
@@ -350,9 +380,6 @@ class S3StorageManager extends StorageManager
         }
     }
 
-    /**
-     * Deletes a single variant from S3 (e.g. one thumbnail) while leaving others intact.
-     */
     private function deleteRemoteVariant(string $variant): void
     {
         try

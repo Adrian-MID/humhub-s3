@@ -3,8 +3,6 @@
 namespace humhub\libs;
 
 use humhub\modules\humhubs3\components\S3MediaStorage;
-use Yii;
-use yii\base\ErrorException;
 use yii\helpers\FileHelper;
 use yii\imagine\Image;
 use yii\web\UploadedFile;
@@ -29,10 +27,10 @@ class LogoImage
             return;
         }
 
-        $cachePath = S3MediaStorage::resolveLocalPath(self::ORIGINAL_PATH, false);
-        FileHelper::createDirectory(dirname($cachePath), 0o755, true);
-        Image::getImagine()->open($file->tempName)->save($cachePath);
-        S3MediaStorage::putFile(self::ORIGINAL_PATH, $cachePath);
+        $processPath = S3MediaStorage::resolveProcessingPath(self::ORIGINAL_PATH, false);
+        FileHelper::createDirectory(dirname($processPath), 0o755, true);
+        Image::getImagine()->open($file->tempName)->save($processPath);
+        S3MediaStorage::putFile(self::ORIGINAL_PATH, $processPath);
     }
 
     /**
@@ -62,26 +60,33 @@ class LogoImage
         $variantPath = self::getVariantPath($width, $height);
         if (S3MediaStorage::has($variantPath))
         {
-            return S3MediaStorage::buildProxyUrl(['path' => $variantPath]);
+            return S3MediaStorage::getPublicUrl($variantPath);
         }
 
         if (static::hasImage() && $autoResize)
         {
             $sourcePath = self::resolveOriginalPath();
-            $cachePath = S3MediaStorage::resolveLocalPath($variantPath, false);
-            FileHelper::createDirectory(dirname($cachePath), 0o755, true);
+            $variantLocalPath = S3MediaStorage::resolveProcessingPath($variantPath, false);
+            FileHelper::createDirectory(dirname($variantLocalPath), 0o755, true);
 
-            $image = Image::getImagine()->open($sourcePath);
-            if ($image->getSize()->getHeight() > $height)
+            try
             {
-                $image->resize($image->getSize()->heighten($height));
+                $image = Image::getImagine()->open($sourcePath);
+                if ($image->getSize()->getHeight() > $height)
+                {
+                    $image->resize($image->getSize()->heighten($height));
+                }
+                if ($image->getSize()->getWidth() > $width)
+                {
+                    $image->resize($image->getSize()->widen($width));
+                }
+                $image->save($variantLocalPath);
+                S3MediaStorage::putFile($variantPath, $variantLocalPath);
             }
-            if ($image->getSize()->getWidth() > $width)
+            finally
             {
-                $image->resize($image->getSize()->widen($width));
+                S3MediaStorage::cleanupProcessingPath(self::ORIGINAL_PATH);
             }
-            $image->save($cachePath);
-            S3MediaStorage::putFile($variantPath, $cachePath);
 
             return static::getUrl($width, $height, false);
         }
@@ -91,12 +96,7 @@ class LogoImage
 
     private static function resolveOriginalPath(): string
     {
-        if (S3MediaStorage::has(self::ORIGINAL_PATH))
-        {
-            return S3MediaStorage::resolveLocalPath(self::ORIGINAL_PATH);
-        }
-
-        return S3MediaStorage::getLegacyPath('logo_image/logo.png');
+        return S3MediaStorage::resolveProcessingPath(self::ORIGINAL_PATH);
     }
 
     /**
@@ -104,8 +104,7 @@ class LogoImage
      */
     public static function hasImage(): bool
     {
-        return S3MediaStorage::has(self::ORIGINAL_PATH)
-            || is_file(S3MediaStorage::getLegacyPath('logo_image/logo.png'));
+        return S3MediaStorage::has(self::ORIGINAL_PATH);
     }
 
     private static function getVariantPath(int $maxWidth, int $maxHeight): string
@@ -116,31 +115,5 @@ class LogoImage
     private static function purgeLogoFiles(): void
     {
         S3MediaStorage::deleteByPrefix('branding/logo');
-
-        try
-        {
-            $logoAssetPath = Yii::getAlias(Yii::$app->assetManager->basePath . DIRECTORY_SEPARATOR . 'logo');
-            if (is_string($logoAssetPath))
-            {
-                FileHelper::removeDirectory($logoAssetPath);
-            }
-        }
-        catch (ErrorException $e)
-        {
-            Yii::error($e->getMessage(), 'admin');
-        }
-
-        try
-        {
-            $legacyLogoPath = Yii::getAlias('@webroot/uploads/logo_image/');
-            if (is_string($legacyLogoPath))
-            {
-                FileHelper::removeDirectory($legacyLogoPath);
-            }
-        }
-        catch (ErrorException $e)
-        {
-            Yii::error($e->getMessage(), 'admin');
-        }
     }
 }

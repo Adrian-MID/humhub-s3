@@ -9,10 +9,10 @@ use RuntimeException;
 use Yii;
 
 /**
- * Local runtime cache under protected/runtime/humhub-s3.
+ * Temporary processing files under protected/runtime/humhub-s3.
  *
- * S3 remains the durable store; this directory only holds temporary copies for
- * streaming, thumbnails, and image processing.
+ * S3 remains the durable store; this directory only holds short-lived copies for
+ * uploads and image processing.
  */
 class LocalRuntimeStore
 {

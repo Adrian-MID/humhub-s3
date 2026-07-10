@@ -103,6 +103,13 @@ class View extends \yii\web\View
     public Theme $theme;
 
     /**
+     * @param array<string, mixed> $params
+     */
+    public function render(string $view, array $params = [], ?\yii\base\Controller $context = null): string
+    {
+    }
+
+    /**
      * @param array<string, mixed> $options
      */
     public function registerLinkTag(array $options): void
@@ -152,11 +159,27 @@ class Module extends \humhub\components\Module
 {
     /** @var class-string */
     public $storageManagerClass;
+
+    /** @var array<string, class-string|array<string, class-string>> */
+    public $controllerMap = [];
+
+    /** @var string[] */
+    public $inlineMimeTypes = [];
+
+    /** @var SettingsManager */
+    public $settings;
 }
 
 namespace humhub\modules\file\components;
 
-class StorageManager extends \yii\base\Component
+interface StorageManagerInterface
+{
+    public function has($variant = null): bool;
+
+    public function get($variant = null);
+}
+
+class StorageManager extends \yii\base\Component implements StorageManagerInterface
 {
     public string $originalFileName = 'file';
 
@@ -205,11 +228,45 @@ class StorageManager extends \yii\base\Component
     }
 }
 
+namespace humhub\modules\humhubs3\components;
+
+class S3StorageManager extends \humhub\modules\file\components\StorageManager
+{
+    public function createPresignedDownloadUrl(?string $variant, string $downloadFileName, bool $inline): string
+    {
+    }
+
+    public function remoteHas(?string $variant = null): bool
+    {
+    }
+}
+
 namespace humhub\modules\file\libs;
 
 class FileHelper extends \yii\helpers\FileHelper
 {
     public static function getMimeType(string $path): ?string
+    {
+    }
+
+    public static function getMimeTypeByExtension(string $filename): ?string
+    {
+    }
+
+    public static function hasExtension(string $filename): bool
+    {
+    }
+}
+
+namespace humhub\modules\file\converter;
+
+class PreviewImage
+{
+    public function applyFile(\humhub\modules\file\models\File $file): bool
+    {
+    }
+
+    public function getFilename(): string
     {
     }
 }
@@ -219,6 +276,94 @@ namespace humhub\modules\file\models;
 class File extends \yii\db\ActiveRecord
 {
     public string $guid = '';
+
+    public string $file_name = '';
+
+    public string $object_model = '';
+
+    public int $created_by = 0;
+
+    public \humhub\modules\file\components\StorageManager $store;
+
+    /**
+     * @param array<string, mixed> $condition
+     * @return static|null
+     */
+    public static function findOne($condition)
+    {
+    }
+
+    public function canView(?\humhub\modules\user\models\User $user = null): bool
+    {
+    }
+
+    /**
+     * @param array<string, mixed>|string $params
+     */
+    public function getUrl($params = [], $absolute = true): string
+    {
+    }
+
+    public function getStore(): \humhub\modules\file\components\StorageManagerInterface
+    {
+    }
+}
+
+namespace humhub\modules\file\actions;
+
+class DownloadAction extends \yii\base\Action
+{
+    public bool $enableHttpCache = true;
+
+    /** @var \humhub\modules\file\models\File */
+    protected $file;
+
+    /** @var string|null */
+    protected $variant;
+
+    public bool $download = false;
+
+    public function init(): void
+    {
+    }
+
+    /**
+     * @return \yii\web\Response|null
+     */
+    public function run()
+    {
+    }
+
+    protected function checkFileExists(): void
+    {
+    }
+
+    protected function getFileName(): string
+    {
+    }
+
+    /**
+     * @return \humhub\modules\file\Module
+     */
+    protected function getModule()
+    {
+    }
+}
+
+class UploadAction extends \yii\base\Action
+{
+}
+
+namespace humhub\modules\file\controllers;
+
+class FileController extends \humhub\components\Controller
+{
+    /**
+     * @return array<string, array<string, class-string>|class-string>
+     */
+    public function actions()
+    {
+    }
 }
 
 namespace humhub\modules\admin\components;
@@ -246,6 +391,15 @@ class Controller extends \humhub\components\Controller
 namespace humhub\libs;
 
 use yii\web\UploadedFile;
+
+class ParameterEvent extends \yii\base\Event
+{
+    /** @var array<string, mixed> */
+    public $params = [];
+
+    /** @var array<string, mixed> */
+    public array $parameters = [];
+}
 
 class ProfileImage
 {
@@ -565,6 +719,57 @@ class View extends \yii\web\View
     }
 
     public function saved(): void
+    {
+    }
+}
+
+namespace humhub\modules\content\widgets\richtext;
+
+class ProsemirrorRichText extends \humhub\components\Widget
+{
+    public bool $edit = false;
+
+    public string $text = '';
+}
+
+namespace humhub\modules\content\widgets\richtext\extensions\file;
+
+class FileExtension
+{
+    public static function replaceLinkExtension(?string $text, ?string $extension, callable $callback): string
+    {
+    }
+
+    public static function instance(): self
+    {
+    }
+
+    public function onBeforeOutput(ProsemirrorRichText $richtext, string $output): string
+    {
+    }
+}
+
+namespace humhub\modules\content\widgets\richtext\extensions\link;
+
+class RichTextLinkExtensionMatch
+{
+    public function getFull(): string
+    {
+    }
+
+    public function getText(): string
+    {
+    }
+
+    public function getExtensionId(): string
+    {
+    }
+
+    public function getAddition(): ?string
+    {
+    }
+
+    public function isImage(): bool
     {
     }
 }

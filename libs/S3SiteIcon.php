@@ -7,7 +7,6 @@ use humhub\modules\humhubs3\components\CoreClassLoader;
 use humhub\modules\humhubs3\components\S3MediaStorage;
 use Imagine\Image\Box;
 use Yii;
-use yii\base\ErrorException;
 use yii\base\Exception;
 use yii\imagine\Image;
 use yii\web\UploadedFile;
@@ -30,10 +29,10 @@ class SiteIcon extends \humhub\modules\humhubs3\libs\core\SiteIcon
             return;
         }
 
-        $cachePath = S3MediaStorage::resolveLocalPath(self::ORIGINAL_PATH, false);
-        \humhub\modules\file\libs\FileHelper::createDirectory(dirname($cachePath), 0o755, true);
-        Image::getImagine()->open($file->tempName)->save($cachePath);
-        S3MediaStorage::putFile(self::ORIGINAL_PATH, $cachePath);
+        $processPath = S3MediaStorage::resolveProcessingPath(self::ORIGINAL_PATH, false);
+        \humhub\modules\file\libs\FileHelper::createDirectory(dirname($processPath), 0o755, true);
+        Image::getImagine()->open($file->tempName)->save($processPath);
+        S3MediaStorage::putFile(self::ORIGINAL_PATH, $processPath);
     }
 
     /**
@@ -51,40 +50,36 @@ class SiteIcon extends \humhub\modules\humhubs3\libs\core\SiteIcon
         $manualPath = self::getManualUploadPath($sizeValue);
         if (S3MediaStorage::has($manualPath))
         {
-            return S3MediaStorage::buildProxyUrl(['path' => $manualPath]);
+            return S3MediaStorage::getPublicUrl($manualPath);
         }
 
         $variantPath = self::getVariantPath($sizeValue);
         if (S3MediaStorage::has($variantPath))
         {
-            return S3MediaStorage::buildProxyUrl(['path' => $variantPath]);
+            return S3MediaStorage::getPublicUrl($variantPath);
         }
 
-        if (!$autoResize)
+        if (!$autoResize || !static::hasImage())
         {
             return null;
         }
 
-        $webModule = Yii::$app->getModule('web');
-        $defaultIcon = ($webModule instanceof \yii\base\Module)
-            ? $webModule->getBasePath() . '/pwa/resources/default_icon.png'
-            : '';
-
-        $baseIcon = static::hasImage()
-            ? self::resolveOriginalPath()
-            : $defaultIcon;
-
-        $cachePath = S3MediaStorage::resolveLocalPath($variantPath, false);
-        \humhub\modules\file\libs\FileHelper::createDirectory(dirname($cachePath), 0o755, true);
+        $sourcePath = self::resolveOriginalPath();
+        $variantLocalPath = S3MediaStorage::resolveProcessingPath($variantPath, false);
+        \humhub\modules\file\libs\FileHelper::createDirectory(dirname($variantLocalPath), 0o755, true);
 
         try
         {
-            Image::getImagine()->open($baseIcon)->resize(new Box($sizeValue, $sizeValue))->save($cachePath);
-            S3MediaStorage::putFile($variantPath, $cachePath);
+            Image::getImagine()->open($sourcePath)->resize(new Box($sizeValue, $sizeValue))->save($variantLocalPath);
+            S3MediaStorage::putFile($variantPath, $variantLocalPath);
         }
         catch (\Exception $ex)
         {
             Yii::error('Could not resize site icon: ' . $ex->getMessage());
+        }
+        finally
+        {
+            S3MediaStorage::cleanupProcessingPath(self::ORIGINAL_PATH);
         }
 
         return static::getUrl($sizeValue, false);
@@ -95,18 +90,12 @@ class SiteIcon extends \humhub\modules\humhubs3\libs\core\SiteIcon
      */
     public static function hasImage(): bool
     {
-        return S3MediaStorage::has(self::ORIGINAL_PATH)
-            || is_file(S3MediaStorage::getLegacyPath('icon/icon.png'));
+        return S3MediaStorage::has(self::ORIGINAL_PATH);
     }
 
     private static function resolveOriginalPath(): string
     {
-        if (S3MediaStorage::has(self::ORIGINAL_PATH))
-        {
-            return S3MediaStorage::resolveLocalPath(self::ORIGINAL_PATH);
-        }
-
-        return S3MediaStorage::getLegacyPath('icon/icon.png');
+        return S3MediaStorage::resolveProcessingPath(self::ORIGINAL_PATH);
     }
 
     /**
@@ -135,31 +124,5 @@ class SiteIcon extends \humhub\modules\humhubs3\libs\core\SiteIcon
     protected static function purgeSiteIconFiles(): void
     {
         S3MediaStorage::deleteByPrefix('branding/icon');
-
-        try
-        {
-            $siteIconsPath = Yii::getAlias(Yii::$app->assetManager->basePath . DIRECTORY_SEPARATOR . 'siteicons');
-            if (is_string($siteIconsPath))
-            {
-                \humhub\modules\file\libs\FileHelper::removeDirectory($siteIconsPath);
-            }
-        }
-        catch (ErrorException $e)
-        {
-            Yii::error($e->getMessage(), 'admin');
-        }
-
-        try
-        {
-            $legacyIconPath = Yii::getAlias('@webroot/uploads/icon/');
-            if (is_string($legacyIconPath))
-            {
-                \yii\helpers\FileHelper::removeDirectory($legacyIconPath);
-            }
-        }
-        catch (ErrorException $e)
-        {
-            Yii::error($e->getMessage(), 'admin');
-        }
     }
 }

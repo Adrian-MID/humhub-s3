@@ -10,7 +10,6 @@ use Imagine\Image\ManipulatorInterface;
 use Imagine\Image\Point;
 use Yii;
 use yii\base\Exception;
-use yii\helpers\FileHelper;
 use yii\helpers\Url;
 use yii\imagine\Image;
 use yii\web\UploadedFile;
@@ -18,7 +17,7 @@ use yii\web\UploadedFile;
 CoreClassLoader::requireCore('humhub\libs\ProfileImage');
 
 /**
- * Profile and space images stored in S3 with a local runtime cache for processing.
+ * Profile and space images stored in S3 with temporary local files for processing.
  */
 class ProfileImage extends \humhub\modules\humhubs3\libs\core\ProfileImage
 {
@@ -29,24 +28,44 @@ class ProfileImage extends \humhub\modules\humhubs3\libs\core\ProfileImage
      */
     public function getUrl($prefix = '', $scheme = false)
     {
-        if ($this->hasStoredVariant($prefix))
+        $relativePath = $this->getRelativePath($prefix);
+
+        if (S3MediaStorage::has($relativePath))
         {
-            return S3MediaStorage::buildProxyUrl([
-                'type' => 'profile',
-                'guid' => $this->guid,
-                'variant' => $prefix,
-            ], (bool) $scheme);
+            return S3MediaStorage::getPublicUrl($relativePath, withVersion: true);
         }
 
+        return $this->getDefaultImageUrl($scheme);
+    }
+
+    /**
+     * @param bool|string $scheme
+     */
+    protected function getDefaultImageUrl($scheme = false): string
+    {
         $path = '@web-static/img/' . $this->defaultImage . '.jpg';
         $path = Yii::$app->view->theme->applyTo($path);
-        $alias = Yii::getAlias($path);
-        if (!is_string($alias))
+
+        return Url::to($this->resolveAlias($path), $this->normalizeScheme($scheme));
+    }
+
+    protected function resolveAlias(string $alias): string
+    {
+        $path = Yii::getAlias($alias);
+        if (!is_string($path))
         {
-            throw new Exception('Unable to resolve default profile image path.');
+            throw new Exception('Unable to resolve alias: ' . $alias);
         }
 
-        return Url::to($alias, $scheme);
+        return $path;
+    }
+
+    /**
+     * @param bool|string $scheme
+     */
+    protected function normalizeScheme($scheme): bool|string
+    {
+        return is_string($scheme) ? $scheme : (bool) $scheme;
     }
 
     /**
@@ -63,7 +82,7 @@ class ProfileImage extends \humhub\modules\humhubs3\libs\core\ProfileImage
      */
     public function getPath($prefix = '')
     {
-        return S3MediaStorage::resolveLocalPath($this->getRelativePath($prefix));
+        return S3MediaStorage::resolveProcessingPath($this->getRelativePath($prefix));
     }
 
     /**
@@ -132,11 +151,6 @@ class ProfileImage extends \humhub\modules\humhubs3\libs\core\ProfileImage
         foreach (['', '_org', '_cropped'] as $prefix)
         {
             S3MediaStorage::delete($this->getRelativePath($prefix));
-            $legacyPath = S3MediaStorage::getLegacyPath($this->getRelativePath($prefix));
-            if (is_file($legacyPath))
-            {
-                FileHelper::unlink($legacyPath);
-            }
         }
     }
 
@@ -152,10 +166,10 @@ class ProfileImage extends \humhub\modules\humhubs3\libs\core\ProfileImage
 
     protected function syncVariant(string $prefix): void
     {
-        $localPath = S3MediaStorage::getCachePath($this->getRelativePath($prefix));
+        $localPath = S3MediaStorage::getProcessPath($this->getRelativePath($prefix));
         if (!is_file($localPath))
         {
-            throw new Exception('Processed profile image is missing from the runtime cache.');
+            throw new Exception('Processed profile image is missing from the processing workspace.');
         }
 
         S3MediaStorage::putFile($this->getRelativePath($prefix), $localPath);

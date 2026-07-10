@@ -1,11 +1,11 @@
 {
     "id": "humhub-s3",
     "name": "HumHub S3",
-    "description": "Store HumHub file uploads in an Amazon S3 bucket or S3-compatible service instead of the local filesystem.",
+    "description": "Store HumHub file uploads in an Amazon S3 bucket or S3-compatible service instead of the local filesystem. Version 2.x requires HumHub 1.18 or later.",
     "keywords": ["s3", "aws", "storage", "files", "upload"],
-    "version": "1.2.5",
+    "version": "2.0.0",
     "humhub": {
-        "minVersion": "1.14"
+        "minVersion": "1.18"
     },
     "homepage": "https://github.com/Adrian-MID/humhub-s3",
     "licence": "GPL-3.0-or-later",

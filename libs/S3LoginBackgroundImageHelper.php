@@ -3,7 +3,6 @@
 namespace humhub\modules\user\helpers;
 
 use humhub\modules\humhubs3\components\S3MediaStorage;
-use Yii;
 use yii\helpers\FileHelper;
 use yii\imagine\Image;
 
@@ -23,27 +22,15 @@ final class LoginBackgroundImageHelper
     {
         S3MediaStorage::delete(self::STORE_PATH);
 
-        $legacyPath = S3MediaStorage::getLegacyPath('login-bg/background.png');
-        if (is_file($legacyPath))
-        {
-            @unlink($legacyPath);
-        }
-
-        $legacyAsset = self::getLegacyAssetPath();
-        if (is_file($legacyAsset))
-        {
-            @unlink($legacyAsset);
-        }
-
         if ($fileName === null || $fileName === '')
         {
             return;
         }
 
-        $cachePath = S3MediaStorage::resolveLocalPath(self::STORE_PATH, false);
-        FileHelper::createDirectory(dirname($cachePath), 0o755, true);
-        Image::getImagine()->open($fileName)->save($cachePath);
-        S3MediaStorage::putFile(self::STORE_PATH, $cachePath);
+        $processPath = S3MediaStorage::resolveProcessingPath(self::STORE_PATH, false);
+        FileHelper::createDirectory(dirname($processPath), 0o755, true);
+        Image::getImagine()->open($fileName)->save($processPath);
+        S3MediaStorage::putFile(self::STORE_PATH, $processPath);
     }
 
     public static function getUrl(): ?string
@@ -53,17 +40,11 @@ final class LoginBackgroundImageHelper
             return null;
         }
 
-        return S3MediaStorage::buildProxyUrl(['path' => self::STORE_PATH]);
+        return S3MediaStorage::getPublicUrl(self::STORE_PATH);
     }
 
     public static function hasImage(): bool
     {
-        return S3MediaStorage::has(self::STORE_PATH)
-            || is_file(S3MediaStorage::getLegacyPath('login-bg/background.png'));
-    }
-
-    private static function getLegacyAssetPath(): string
-    {
-        return Yii::getAlias(Yii::$app->assetManager->basePath) . DIRECTORY_SEPARATOR . 'login-bg' . DIRECTORY_SEPARATOR . 'background.png';
+        return S3MediaStorage::has(self::STORE_PATH);
     }
 }

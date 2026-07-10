@@ -1,6 +1,6 @@
 {
     "name": "adrian-mid/humhub-s3",
-    "description": "Store HumHub file uploads in Amazon S3 or an S3-compatible service.",
+    "description": "Store HumHub file uploads in Amazon S3 or an S3-compatible service. Version 2.x requires HumHub 1.18 or later.",
     "type": "humhub-module",
     "keywords": ["humhub", "humhub-module", "s3", "aws", "storage", "files", "upload"],
     "license": "GPL-3.0-or-later",
@@ -29,7 +29,8 @@
     "extra": {
         "installer-name": "humhub-s3",
         "humhub": {
-            "moduleId": "humhub-s3"
+            "moduleId": "humhub-s3",
+            "minVersion": "1.18"
         }
     },
     "config": {

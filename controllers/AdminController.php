@@ -4,6 +4,7 @@ namespace humhub\modules\humhubs3\controllers;
 
 use humhub\modules\admin\components\Controller;
 use humhub\modules\admin\permissions\ManageSettings;
+use humhub\modules\humhubs3\components\BucketPolicyTemplate;
 use humhub\modules\humhubs3\components\LocalRuntimeStore;
 use humhub\modules\humhubs3\models\forms\ConfigureForm;
 use Throwable;
@@ -36,40 +37,63 @@ class AdminController extends Controller
      */
     public function actionIndex()
     {
-        $model = new ConfigureForm();
-        $model->loadSettings();
+        $model = $this->loadConfigureForm();
+        $post = self::normalizePostData(Yii::$app->request->post());
 
+        if ($model->load($post))
+        {
+            if (!empty($post['testConnection']))
+            {
+                $this->flashTestResult($model->testConnection());
+            }
+            elseif ($model->save())
+            {
+                $this->view->saved();
+
+                return $this->redirect(['index']);
+            }
+        }
+
+        return $this->renderTab('general', [
+            'model' => $model,
+        ]);
+    }
+
+    /**
+     * @return string|\yii\web\Response
+     */
+    public function actionBucketPolicy()
+    {
+        $model = $this->loadConfigureForm();
+        $post = self::normalizePostData(Yii::$app->request->post());
+
+        if (!empty($post['testBucketPolicy']))
+        {
+            $this->flashTestResult($model->testBucketPolicy());
+        }
+
+        return $this->renderTab('bucket-policy', [
+            'model' => $model,
+            'bucketPolicyJson' => BucketPolicyTemplate::toJson($model->bucket, $model->prefix),
+            'bucketPolicyNeedsPlaceholderReview' => BucketPolicyTemplate::needsPlaceholderReview($model->bucket),
+        ]);
+    }
+
+    /**
+     * @return string|\yii\web\Response
+     */
+    public function actionProcessingCache()
+    {
         $post = self::normalizePostData(Yii::$app->request->post());
 
         if (!empty($post['clearLocalStore']))
         {
             $this->handleClearLocalStore();
-        }
-        elseif ($model->load($post))
-        {
-            if (!empty($post['testConnection']))
-            {
-                $result = $model->testConnection();
 
-                if ($result['success'])
-                {
-                    $this->view->success($result['message']);
-                }
-                else
-                {
-                    $this->view->error($result['message']);
-                }
-            }
-            elseif ($model->save())
-            {
-                $this->view->saved();
-                return $this->redirect(['/humhub-s3/admin/index']);
-            }
+            return $this->redirect(['processing-cache']);
         }
 
-        return $this->render('index', [
-            'model' => $model,
-            'isActive' => ConfigureForm::isActive(),
+        return $this->renderTab('processing-cache', [
             'localStoreStats' => LocalRuntimeStore::getStats(),
         ]);
     }
@@ -81,7 +105,41 @@ class AdminController extends Controller
     {
         $this->handleClearLocalStore();
 
-        return $this->redirect(['/humhub-s3/admin/index']);
+        return $this->redirect(['processing-cache']);
+    }
+
+    /**
+     * @param array<string, mixed> $tabParams
+     */
+    private function renderTab(string $partial, array $tabParams = []): string
+    {
+        return $this->render('tabs', [
+            'tab' => Yii::$app->view->render('@humhub-s3/views/admin/' . $partial, $tabParams),
+            'isActive' => ConfigureForm::isActive(),
+        ]);
+    }
+
+    private function loadConfigureForm(): ConfigureForm
+    {
+        $model = new ConfigureForm();
+        $model->loadSettings();
+
+        return $model;
+    }
+
+    /**
+     * @param array{success: bool, message: string} $result
+     */
+    private function flashTestResult(array $result): void
+    {
+        if ($result['success'])
+        {
+            $this->view->success($result['message']);
+        }
+        else
+        {
+            $this->view->error($result['message']);
+        }
     }
 
     private function handleClearLocalStore(): void
@@ -89,12 +147,12 @@ class AdminController extends Controller
         try
         {
             LocalRuntimeStore::clear();
-            $this->view->success(Yii::t('HumhubS3Module.base', 'Local runtime cache cleared successfully.'));
+            $this->view->success(Yii::t('HumhubS3Module.base', 'Processing cache cleared successfully.'));
         }
         catch (Throwable $exception)
         {
             Yii::error('Unable to clear local runtime store: ' . $exception->getMessage(), 'humhub-s3');
-            $this->view->error(Yii::t('HumhubS3Module.base', 'Unable to clear the local runtime cache. Check the application log for details.'));
+            $this->view->error(Yii::t('HumhubS3Module.base', 'Unable to clear the processing cache. Check the application log for details.'));
         }
     }
 
