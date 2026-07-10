@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here. Version numbers follow [Semantic Versioning](https://semver.org/).
 
+## 2.0.1 - 2026-07-10
+
+After the 2.0 move to direct S3 URLs, notification emails sent by the cron worker could fail before any message was delivered. HumHub loads a class-map override so richtext attachment links in emails keep their presigned S3 URLs instead of being rewritten into HumHub file routes. That override still declared the old untyped method signature, while HumHub 1.18 now requires typed `LinkParserBlock` parameters. PHP treats that mismatch as a fatal error when the class loads, which is exactly when the worker tries to render email HTML.
+
+This patch aligns the override with HumHub 1.18. Queued and cron-driven emails work again, and presigned S3 attachment links in email HTML are still preserved.
+
+### Fixed
+
+- `RichTextToEmailHtmlConverter` override now matches HumHub 1.18's typed `LinkParserBlock` signature, fixing fatal errors when the cron worker sends notification emails.
+- Presigned S3 attachment URLs in email richtext are still left unchanged (not tokenized into HumHub file routes).
+
 ## 2.0.0 - 2026-07-09
 
 This release changes how HumHub hands files to people when S3 is enabled. HumHub still decides who may see a private attachment, but it no longer streams file bytes through PHP for normal delivery. Your bucket does that work instead. The goal is to support ephemeral environments like containers and auto-scaling app nodes, where local disk is temporary and PHP should not handle every image or download.

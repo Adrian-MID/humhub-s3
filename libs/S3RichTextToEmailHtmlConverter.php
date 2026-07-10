@@ -2,6 +2,7 @@
 
 namespace humhub\modules\content\widgets\richtext\converter;
 
+use humhub\modules\content\widgets\richtext\extensions\link\LinkParserBlock;
 use humhub\modules\humhubs3\components\CoreClassLoader;
 use humhub\modules\humhubs3\components\S3FileDelivery;
 
@@ -12,19 +13,12 @@ CoreClassLoader::requireCore('humhub\modules\content\widgets\richtext\converter\
  */
 class RichTextToEmailHtmlConverter extends \humhub\modules\humhubs3\libs\core\RichTextToEmailHtmlConverter
 {
-    /**
-     * @param object $linkBlock
-     * @return object
-     */
-    protected function tokenizeBlock($linkBlock)
+    protected function tokenizeBlock(LinkParserBlock $linkBlock): LinkParserBlock
     {
-        if (method_exists($linkBlock, 'getUrl'))
+        $url = $linkBlock->getUrl();
+        if (is_string($url) && S3FileDelivery::isPresignedS3Url($url))
         {
-            $url = $linkBlock->getUrl();
-            if (is_string($url) && S3FileDelivery::isPresignedS3Url($url))
-            {
-                return $linkBlock;
-            }
+            return $linkBlock;
         }
 
         return parent::tokenizeBlock($linkBlock);
