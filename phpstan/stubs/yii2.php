@@ -6,6 +6,15 @@ class Event extends BaseObject
 {
     /** @var object|null */
     public $sender;
+
+    /**
+     * @param class-string $class
+     * @param string $name
+     * @param callable $handler
+     */
+    public static function on($class, $name, $handler): void
+    {
+    }
 }
 
 class BaseObject
@@ -403,4 +412,50 @@ class ActiveField
     public function checkbox(): self
     {
     }
+}
+
+namespace yii\mail;
+
+interface MessageInterface
+{
+    /**
+     * @param array<string, mixed> $options
+     */
+    public function embed(string $fileName, array $options = []): string;
+}
+
+class BaseMailer extends \yii\base\Component
+{
+    public const EVENT_BEFORE_SEND = 'beforeSend';
+}
+
+class MailEvent extends \yii\base\Event
+{
+    public MessageInterface $message;
+}
+
+namespace yii\symfonymailer;
+
+class Mailer extends \yii\mail\BaseMailer
+{
+}
+
+class Message implements \yii\mail\MessageInterface
+{
+    /**
+     * @param array<string, mixed> $options
+     */
+    public function embed(string $fileName, array $options = []): string
+    {
+    }
+}
+
+namespace humhub\components\mail;
+
+class Message extends \yii\symfonymailer\Message
+{
+}
+
+class Mailer extends \yii\symfonymailer\Mailer
+{
 }

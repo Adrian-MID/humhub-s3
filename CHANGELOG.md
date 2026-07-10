@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here. Version numbers follow [Semantic Versioning](https://semver.org/).
 
+## 2.0.2 - 2026-07-10
+
+Post and summary notification emails could show richtext images without a `src` attribute when S3 storage is active. Presigned S3 URLs are not reliable in email clients, and HumHub's download-token URLs are not used for S3-backed files. Richtext images in outgoing emails are now embedded as inline (CID) attachments. Web and stream rendering are unchanged.
+
+### Fixed
+
+- Richtext images in notification and summary emails are embedded inline when S3 storage is active.
+- Email HTML preserves `cid:` image sources through HTMLPurifier so Symfony can link inline parts instead of attaching them separately.
+- Email HTML conversion no longer caches results while S3 is active, so inline images are registered for every outgoing message.
+- `RichTextToEmailHtmlConverter::onAfterParse()` matches HumHub's untyped parent signature, fixing fatal errors when the queue worker sends notification emails.
+
 ## 2.0.1 - 2026-07-10
 
 After the 2.0 move to direct S3 URLs, notification emails sent by the cron worker could fail before any message was delivered. HumHub loads a class-map override so richtext attachment links in emails keep their presigned S3 URLs instead of being rewritten into HumHub file routes. That override still declared the old untyped method signature, while HumHub 1.18 now requires typed `LinkParserBlock` parameters. PHP treats that mismatch as a fatal error when the class loads, which is exactly when the worker tries to render email HTML.

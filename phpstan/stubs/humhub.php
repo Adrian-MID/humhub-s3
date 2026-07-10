@@ -732,6 +732,25 @@ class ProsemirrorRichText extends \humhub\components\Widget
     public string $text = '';
 }
 
+namespace humhub\modules\content\widgets\richtext\converter;
+
+class RichTextToHtmlConverter
+{
+    public const OPTION_CACHE_KEY = 'cacheKey';
+
+    /**
+     * @param string $text
+     * @param array<string, mixed> $options
+     */
+    public static function process($text, $options = []): string
+    {
+    }
+
+    protected function onAfterParse($text): string
+    {
+    }
+}
+
 namespace humhub\modules\content\widgets\richtext\extensions\file;
 
 class FileExtension

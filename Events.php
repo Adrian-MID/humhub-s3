@@ -2,15 +2,19 @@
 
 namespace humhub\modules\humhubs3;
 
+use humhub\components\mail\Mailer;
 use humhub\components\ModuleEvent;
 use humhub\helpers\ControllerHelper;
 use humhub\modules\file\components\StorageManager;
 use humhub\modules\admin\permissions\ManageSettings;
 use humhub\modules\admin\widgets\SettingsMenu;
+use humhub\modules\humhubs3\components\S3EmailInlineImages;
 use humhub\modules\ui\menu\MenuLink;
 use Yii;
 use yii\base\BaseObject;
 use yii\base\Event;
+use yii\mail\BaseMailer;
+use yii\mail\MailEvent;
 
 class Events extends BaseObject
 {
@@ -26,6 +30,26 @@ class Events extends BaseObject
         Module::applyStorageManager();
         Module::applyClassMaps();
         Module::applyFileControllerMap();
+        self::registerMailInlineImageHandler();
+    }
+
+    /**
+     * Attaches S3 richtext images registered during email HTML conversion.
+     */
+    private static function registerMailInlineImageHandler(): void
+    {
+        static $registered = false;
+        if ($registered)
+        {
+            return;
+        }
+
+        $registered = true;
+
+        Event::on(Mailer::class, BaseMailer::EVENT_BEFORE_SEND, static function (MailEvent $event): void
+        {
+            S3EmailInlineImages::applyToMessage($event->message);
+        });
     }
 
     /**
