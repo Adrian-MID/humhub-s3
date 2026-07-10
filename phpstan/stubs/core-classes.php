@@ -154,6 +154,8 @@ class MailHeaderImage extends Widget
 
 class File extends \yii\db\ActiveRecord
 {
+    public int $id = 0;
+
     public string $guid = '';
 
     public string $file_name = '';
@@ -184,6 +186,21 @@ class File extends \yii\db\ActiveRecord
 
 class RichTextToEmailHtmlConverter
 {
+    /** @var array<string, bool> */
+    public $allowedSchemes = [];
+
+    /**
+     * @param string $text
+     * @param array<string, mixed> $options
+     */
+    public static function process($text, $options = []): string
+    {
+    }
+
+    protected function onAfterParse($text): string
+    {
+    }
+
     protected function tokenizeBlock(\humhub\modules\content\widgets\richtext\extensions\link\LinkParserBlock $linkBlock): \humhub\modules\content\widgets\richtext\extensions\link\LinkParserBlock
     {
     }

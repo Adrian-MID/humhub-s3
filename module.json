@@ -3,7 +3,7 @@
     "name": "HumHub S3",
     "description": "Store HumHub file uploads in an Amazon S3 bucket or S3-compatible service instead of the local filesystem. Version 2.x requires HumHub 1.18 or later.",
     "keywords": ["s3", "aws", "storage", "files", "upload"],
-    "version": "2.0.1",
+    "version": "2.0.2",
     "humhub": {
         "minVersion": "1.18"
     },
