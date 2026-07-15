@@ -107,4 +107,16 @@ class S3EmailInlineImages
 
         self::reset();
     }
+
+    /**
+     * Clears registrations after send completes or fails after inline parts were attached.
+     *
+     * HumHub notification and summary mails may call RichTextToEmailHtmlConverter::process()
+     * more than once per message (e.g. comment plus parent post). Registrations must persist
+     * until Mailer::EVENT_BEFORE_SEND, then be cleared so the next message starts clean.
+     */
+    public static function finalizeAfterSend(): void
+    {
+        self::reset();
+    }
 }

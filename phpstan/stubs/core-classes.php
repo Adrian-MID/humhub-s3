@@ -182,10 +182,16 @@ class File extends \yii\db\ActiveRecord
     public function getUrl($params = [], $absolute = true): string
     {
     }
+
+    public function getHash(int $length = 0): string
+    {
+    }
 }
 
 class RichTextToEmailHtmlConverter
 {
+    public const OPTION_RECEIVER_USER = 'receiver';
+
     /** @var array<string, bool> */
     public $allowedSchemes = [];
 
@@ -202,6 +208,42 @@ class RichTextToEmailHtmlConverter
     }
 
     protected function tokenizeBlock(\humhub\modules\content\widgets\richtext\extensions\link\LinkParserBlock $linkBlock): \humhub\modules\content\widgets\richtext\extensions\link\LinkParserBlock
+    {
+    }
+
+    protected function renderPlainLink(\humhub\modules\content\widgets\richtext\extensions\link\LinkParserBlock $linkBlock): string
+    {
+    }
+
+    protected function renderPlainImage(\humhub\modules\content\widgets\richtext\extensions\link\LinkParserBlock $linkBlock): string
+    {
+    }
+}
+
+class MailContentEntry extends \yii\base\Widget
+{
+    public $originator;
+
+    /** @var \humhub\modules\user\models\User|null */
+    public $receiver;
+
+    /** @var mixed */
+    public $content;
+
+    public $space;
+
+    public $date;
+
+    public $isComment;
+
+    public function run(): string
+    {
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    public function render($view, $params = []): string
     {
     }
 }

@@ -149,6 +149,12 @@ class Exception extends \Exception
 {
 }
 
+namespace yii\base;
+
+class ViewNotFoundException extends \Exception
+{
+}
+
 namespace yii\web;
 
 class AssetManager extends \yii\base\Component
@@ -328,6 +334,10 @@ namespace yii\db;
 
 class ActiveRecord extends \yii\base\BaseObject
 {
+    public \humhub\modules\file\components\FileManager $fileManager;
+
+    public ?\humhub\modules\content\models\Content $content = null;
+
     /**
      * @param array<string, mixed> $condition
      * @return static|null
@@ -427,6 +437,7 @@ interface MessageInterface
 class BaseMailer extends \yii\base\Component
 {
     public const EVENT_BEFORE_SEND = 'beforeSend';
+    public const EVENT_AFTER_SEND = 'afterSend';
 }
 
 class MailEvent extends \yii\base\Event
