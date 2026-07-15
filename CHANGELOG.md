@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here. Version numbers follow [Semantic Versioning](https://semver.org/).
 
+## 2.1.0 - 2026-07-15
+
+Comment notification emails convert richtext twice (comment body and parent post). Resetting inline-image registrations at the start of each conversion dropped comment images before the message was sent.
+
+Stream file attachments (uploaded below the text, not embedded inline in richtext) were never included in MailContentEntry output. File links in richtext also used presigned S3 URLs that email clients cannot use reliably.
+
+### Fixed
+
+- Inline S3 richtext images are accumulated across every `RichTextToEmailHtmlConverter::process()` call within one outgoing email, so comment and mention notifications embed comment images correctly.
+- Stream-attached image files are appended to notification email HTML and embedded inline when S3 storage is active.
+- Richtext file attachment links use HumHub download URLs with receiver tokens instead of presigned S3 URLs.
+
 ## 2.0.2 - 2026-07-10
 
 Post and summary notification emails could show richtext images without a `src` attribute when S3 storage is active. Presigned S3 URLs are not reliable in email clients, and HumHub's download-token URLs are not used for S3-backed files. Richtext images in outgoing emails are now embedded as inline (CID) attachments. Web and stream rendering are unchanged.

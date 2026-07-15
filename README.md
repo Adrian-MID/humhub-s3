@@ -35,7 +35,7 @@ composer require adrian-mid/humhub-s3
 ## Upgrade to the latest version
 ```bash
 cd protected/modules
-composer require adrian-mid/humhub-s3^2.0
+composer require adrian-mid/humhub-s3:^2.1
 ```
 
 Enable **HumHub S3** under *Administration → Modules*.

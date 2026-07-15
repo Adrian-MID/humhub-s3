@@ -3,10 +3,14 @@
 namespace humhub\modules\content\widgets\richtext\converter;
 
 use humhub\modules\content\widgets\richtext\extensions\link\LinkParserBlock;
+use humhub\modules\file\converter\PreviewImage;
 use humhub\modules\file\models\File;
 use humhub\modules\humhubs3\components\CoreClassLoader;
+use humhub\modules\humhubs3\components\S3EmailAttachedFiles;
 use humhub\modules\humhubs3\components\S3EmailInlineImages;
+use humhub\modules\humhubs3\components\S3EmailRenderContext;
 use humhub\modules\humhubs3\models\forms\ConfigureForm;
+use yii\helpers\Url;
 
 CoreClassLoader::requireCore('humhub\modules\content\widgets\richtext\converter\RichTextToEmailHtmlConverter');
 
@@ -38,14 +42,27 @@ class RichTextToEmailHtmlConverter extends \humhub\modules\humhubs3\libs\core\Ri
      */
     public static function process($text, $options = []): string
     {
-        S3EmailInlineImages::reset();
+        // Do not reset inline-image registrations here. One email may call process()
+        // multiple times (comment notification: comment body + parent post). Registrations
+        // are cleared after embed in S3EmailInlineImages::applyToMessage().
 
         if (ConfigureForm::isActive())
         {
             unset($options[RichTextToHtmlConverter::OPTION_CACHE_KEY]);
         }
 
-        return parent::process($text, $options);
+        $html = parent::process($text, $options);
+
+        if (ConfigureForm::isActive())
+        {
+            $context = S3EmailRenderContext::current();
+            if ($context !== null)
+            {
+                $html = S3EmailAttachedFiles::appendStreamFilesHtml($html, $context['owner'], $context['receiver']);
+            }
+        }
+
+        return $html;
     }
 
     /**
@@ -85,6 +102,43 @@ class RichTextToEmailHtmlConverter extends \humhub\modules\humhubs3\libs\core\Ri
         return $placeholders === [] ? $text : strtr($text, $placeholders);
     }
 
+    /**
+     * File attachment links in richtext use presigned S3 URLs from S3File::getUrl(), which email
+     * clients cannot rely on. Restore HumHub download URLs with receiver tokens instead.
+     *
+     * @inheritdoc
+     */
+    protected function renderPlainLink(LinkParserBlock $linkBlock): string
+    {
+        if (ConfigureForm::isActive())
+        {
+            $fileId = $linkBlock->getFileId();
+            if ($fileId !== null)
+            {
+                $file = File::findOne(['id' => $fileId]);
+                if ($file instanceof File)
+                {
+                    $previewImage = new PreviewImage();
+                    if ($previewImage->applyFile($file))
+                    {
+                        $cid = S3EmailInlineImages::registerFile($file);
+                        if ($cid !== null)
+                        {
+                            $linkBlock->setUrl('cid:' . $cid);
+
+                            return $this->renderPlainImage($linkBlock);
+                        }
+                    }
+
+                    $linkBlock->setUrl(self::buildDownloadUrl($file));
+                    $linkBlock = parent::tokenizeBlock($linkBlock);
+                }
+            }
+        }
+
+        return parent::renderPlainLink($linkBlock);
+    }
+
     protected function tokenizeBlock(LinkParserBlock $linkBlock): LinkParserBlock
     {
         if (!ConfigureForm::isActive())
@@ -107,11 +161,22 @@ class RichTextToEmailHtmlConverter extends \humhub\modules\humhubs3\libs\core\Ri
         $cid = S3EmailInlineImages::registerFile($file);
         if ($cid === null)
         {
+            $linkBlock->setUrl(self::buildDownloadUrl($file));
+
             return parent::tokenizeBlock($linkBlock);
         }
 
         $linkBlock->setUrl('cid:' . $cid);
 
         return $linkBlock;
+    }
+
+    private static function buildDownloadUrl(File $file): string
+    {
+        return Url::to([
+            '/file/file/download',
+            'guid' => $file->guid,
+            'hash_sha1' => $file->getHash(8),
+        ], true);
     }
 }

@@ -307,6 +307,10 @@ class File extends \yii\db\ActiveRecord
     public function getStore(): \humhub\modules\file\components\StorageManagerInterface
     {
     }
+
+    public function getHash(int $length = 0): string
+    {
+    }
 }
 
 namespace humhub\modules\file\actions;
@@ -339,6 +343,10 @@ class DownloadAction extends \yii\base\Action
     }
 
     protected function getFileName(): string
+    {
+    }
+
+    public static function generateDownloadToken(\humhub\modules\file\models\File $file, \humhub\modules\user\models\User $user): string
     {
     }
 
@@ -550,6 +558,17 @@ class Html
     public static function img(string $src, array $options = []): string
     {
     }
+
+    public static function encode(?string $content): string
+    {
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     */
+    public static function a(string $text, ?string $url = null, array $options = []): string
+    {
+    }
 }
 
 namespace humhub\modules\file\libs;
@@ -673,6 +692,34 @@ class MailHeaderImage extends Widget
     }
 }
 
+class MailContentEntry extends Widget
+{
+    /** @var \humhub\modules\user\models\User|null */
+    public $originator;
+
+    /** @var \humhub\modules\user\models\User|null */
+    public $receiver;
+
+    /** @var mixed */
+    public $content;
+
+    /** @var mixed */
+    public $space;
+
+    /** @var string|null */
+    public $date;
+
+    /** @var bool */
+    public $isComment;
+
+    /**
+     * @return string
+     */
+    public function run()
+    {
+    }
+}
+
 namespace humhub\modules\admin\permissions;
 
 class ManageSettings
@@ -723,6 +770,59 @@ class View extends \yii\web\View
     }
 }
 
+namespace humhub\modules\content\interfaces;
+
+interface ContentOwner
+{
+    public function getContentDescription(): string;
+}
+
+namespace humhub\modules\content\models;
+
+class Content
+{
+    public \humhub\modules\user\models\User $createdBy;
+}
+
+namespace humhub\modules\user\models;
+
+class User
+{
+    public string $email = '';
+}
+
+namespace humhub\modules\file\components;
+
+class FileManager
+{
+    /**
+     * @return \humhub\modules\file\models\File[]
+     */
+    public function findStreamFiles(bool $showInStream = true): array
+    {
+    }
+}
+
+namespace humhub\components\rendering;
+
+interface Viewable
+{
+}
+
+class ViewPathRenderer
+{
+    /**
+     * @param array<string, mixed> $config
+     */
+    public function __construct(array $config = [])
+    {
+    }
+
+    public function render(Viewable $viewable): string
+    {
+    }
+}
+
 namespace humhub\modules\content\widgets\richtext;
 
 class ProsemirrorRichText extends \humhub\components\Widget
@@ -743,6 +843,13 @@ class RichTextToHtmlConverter
      * @param array<string, mixed> $options
      */
     public static function process($text, $options = []): string
+    {
+    }
+
+    /**
+     * @param mixed $content
+     */
+    public static function buildCacheKeyForContent($content, string $suffix): string
     {
     }
 

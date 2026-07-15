@@ -9,7 +9,10 @@ use humhub\modules\file\components\StorageManager;
 use humhub\modules\admin\permissions\ManageSettings;
 use humhub\modules\admin\widgets\SettingsMenu;
 use humhub\modules\humhubs3\components\S3EmailInlineImages;
+use humhub\modules\humhubs3\components\S3EmailRenderContext;
+use humhub\modules\humhubs3\models\forms\ConfigureForm;
 use humhub\modules\ui\menu\MenuLink;
+use humhub\widgets\mails\MailContentEntry;
 use Yii;
 use yii\base\BaseObject;
 use yii\base\Event;
@@ -31,6 +34,7 @@ class Events extends BaseObject
         Module::applyClassMaps();
         Module::applyFileControllerMap();
         self::registerMailInlineImageHandler();
+        self::registerMailContentEntryHandler();
     }
 
     /**
@@ -49,6 +53,56 @@ class Events extends BaseObject
         Event::on(Mailer::class, BaseMailer::EVENT_BEFORE_SEND, static function (MailEvent $event): void
         {
             S3EmailInlineImages::applyToMessage($event->message);
+        });
+
+        Event::on(Mailer::class, BaseMailer::EVENT_AFTER_SEND, static function (MailEvent $event): void
+        {
+            S3EmailInlineImages::finalizeAfterSend();
+        });
+    }
+
+    /**
+     * Exposes the current MailContentEntry content owner during email HTML conversion.
+     */
+    private static function registerMailContentEntryHandler(): void
+    {
+        static $registered = false;
+        if ($registered)
+        {
+            return;
+        }
+
+        $registered = true;
+
+        Event::on(MailContentEntry::class, 'beforeRun', static function (Event $event): void
+        {
+            if (!ConfigureForm::isActive())
+            {
+                return;
+            }
+
+            /** @var MailContentEntry $widget */
+            $widget = $event->sender;
+            if ($widget->content instanceof \humhub\modules\content\interfaces\ContentOwner)
+            {
+                S3EmailRenderContext::push($widget->content, $widget->receiver);
+            }
+        });
+
+        Event::on(MailContentEntry::class, 'afterRun', static function (Event $event): void
+        {
+            if (!ConfigureForm::isActive())
+            {
+                return;
+            }
+
+            /** @var MailContentEntry $widget */
+            $widget = $event->sender;
+            $context = S3EmailRenderContext::current();
+            if ($context !== null && $widget->content === $context['owner'])
+            {
+                S3EmailRenderContext::pop();
+            }
         });
     }
 
